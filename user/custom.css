@@ -395,12 +395,26 @@ div[contenteditable="true"] :is(p, span, div, li),
   text-spacing-trim: normal !important;
 }
 
-/* Code blocks & inline code: preserve exact monospace metrics without CJK autospace injection */
+/* Code blocks, inline code & Diff viewer: airy Cursor-like reading rhythm + MonoLisa stylistic sets (excludes virtualized .monaco-editor line-height) */
 :is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text, .prose, .markdown, article) :is(code, pre, pre *, kbd, samp, .font-mono, [class*="language-"]) {
   font-family: var(--font-mono) !important;
-  font-size: 12.8px !important;
+  font-size: 13px !important;
+  font-variant-ligatures: contextual !important;
+  font-feature-settings: "ss01" on, "ss04" on, "ss05" on, "ss06" on, "zero" on !important;
   text-autospace: no-autospace !important;
   text-spacing-trim: space-all !important;
+}
+
+:is(pre, pre code, pre *, [class*="language-"], table.font-mono td, .font-mono table td, [data-testid*="diff" i] td, [data-testid*="diff" i] pre, [class*="diff" i] td):not(.monaco-editor):not(.monaco-editor *) {
+  font-size: 13.5px !important;
+  line-height: 1.65 !important;
+  font-variant-ligatures: contextual !important;
+  font-feature-settings: "ss01" on, "ss04" on, "ss05" on, "ss06" on, "zero" on !important;
+}
+
+:is(table.font-mono td, .font-mono table td, [data-testid*="diff" i] td, [class*="diff" i] td):not(.monaco-editor *) {
+  padding-top: 1.5px !important;
+  padding-bottom: 1.5px !important;
 }
 
 /* Compact pills, badges & capsule buttons: trim leading/trailing font metrics for true optical centering */
@@ -7378,6 +7392,32 @@ html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is([d
   background-color: rgba(26, 58, 110, 0.84) !important;
   backdrop-filter: blur(12px) saturate(140%) !important;
   -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+}
+
+/* ==========================================================================
+ * 13. Conversation Canvas Fine Graph-Paper Grid (`claudeUxGridBg` -> html[data-ag-grid-bg="on"])
+ *     Applies only to the main conversation canvas (never sidebar or browser cutouts)
+ * ========================================================================== */
+html[data-ag-grid-bg="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) body:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) [data-testid="overview-panel-host"] {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 0.5px, transparent 0.5px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 0.5px, transparent 0.5px) !important;
+  background-size: 20px 20px !important;
+  background-position: -0.5px -0.5px !important;
+}
+
+html[data-ag-grid-bg="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) [data-testid="overview-panel-host"] {
+  background-image:
+    linear-gradient(to right, rgba(20, 20, 19, 0.042) 0.5px, transparent 0.5px),
+    linear-gradient(to bottom, rgba(20, 20, 19, 0.042) 0.5px, transparent 0.5px) !important;
+  background-size: 20px 20px !important;
+  background-position: -0.5px -0.5px !important;
+}
+
+/* Remove opaque 48px bottom fade strip above composer so grid flows seamlessly behind frosted composer */
+html[data-ag-grid-bg="on"] [data-testid="overview-panel-host"] .absolute.bottom-0.pointer-events-none {
+  background-image: none !important;
+  background: transparent !important;
 }
 
 #ag-claude-ov-sections .ag-ov-mini-meter-wrap {

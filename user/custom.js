@@ -195,7 +195,8 @@ div.items-center > div[style*="--max-conversation-width"] {
     customizations: effectiveModBool('claudeUxCustomizations', true),
     codeFold: effectiveModBool('claudeUxCodeFold', true),
     overviewPanel: effectiveModBool('claudeUxOverviewPanel', true),
-    glass: effectiveModBool('claudeUxGlass', true)
+    glass: effectiveModBool('claudeUxGlass', true),
+    gridBg: effectiveModBool('claudeUxGridBg', true)
   };
   const L = (zh, en) => (FEAT.i18n ? zh : en);
 
@@ -218,6 +219,8 @@ div.items-center > div[style*="--max-conversation-width"] {
     docRoot.setAttribute('data-ag-cjk-scale', currentCjkScale);
     if (FEAT.glass) docRoot.setAttribute('data-ag-glass', 'on');
     else docRoot.removeAttribute('data-ag-glass');
+    if (FEAT.gridBg) docRoot.setAttribute('data-ag-grid-bg', 'on');
+    else docRoot.removeAttribute('data-ag-grid-bg');
   }
   applyCustomFontOverrides();
 
@@ -6928,6 +6931,14 @@ div.items-center > div[style*="--max-conversation-width"] {
           'Subtle Frosted Glass',
           '为侧边栏、底部输入框、右侧概览与浮层卡片开启轻度半透磨砂与微高光描边，层次更通透',
           'Enables subtle frosted glass translucency and hairline highlights on sidebar, composer, overview panel, and popovers'
+        ],
+        [
+          'claudeUxGridBg',
+          'gridBg',
+          '对话区方格网格背景',
+          'Conversation Grid Background',
+          '在中间对话画布叠加细腻的 24px 工程方格底纹，不影响侧边栏与内置浏览器视图',
+          'Overlays a subtle 24px square graph-paper grid on the main conversation canvas (sidebar and browser cutouts unaffected)'
         ]
       ]
     },
@@ -7304,6 +7315,11 @@ div.items-center > div[style*="--max-conversation-width"] {
       if (docRoot) {
         if (on) docRoot.setAttribute('data-ag-glass', 'on');
         else docRoot.removeAttribute('data-ag-glass');
+      }
+    } else if (featKey === 'gridBg') {
+      if (docRoot) {
+        if (on) docRoot.setAttribute('data-ag-grid-bg', 'on');
+        else docRoot.removeAttribute('data-ag-grid-bg');
       }
     }
     syncSidebarEnhancements();
@@ -14291,6 +14307,7 @@ div.items-center > div[style*="--max-conversation-width"] {
       docRoot.removeAttribute('data-ag-ux-lang');
       docRoot.removeAttribute('data-ag-cjk-scale');
       docRoot.removeAttribute('data-ag-glass');
+      docRoot.removeAttribute('data-ag-grid-bg');
     }
     if (window.__agClaudeUxDispose === dispose) window.__agClaudeUxDispose = null;
   }
