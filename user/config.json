@@ -4,6 +4,13 @@
   "preset": "claude-desktop-purewhite",
   "contextLimit": 256000,
   "cjkFontScale": "95",
+  "chatOffsetX": -100,
+  "fonts": {
+    "global": "",
+    "main": "",
+    "overview": "",
+    "mono": ""
+  },
   "modules": {
     "i18n": false,
     "metrics": true,

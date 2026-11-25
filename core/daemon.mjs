@@ -828,6 +828,46 @@ let activeConfig = {
   endpoints: []
 };
 
+const ALLOWED_FONT_SLOT_KEYS = new Set(['global', 'main', 'overview', 'mono']);
+
+function sanitizeChatOffsetX(raw) {
+  if (raw === '' || raw == null) return 0;
+  const n = Number(String(raw).trim().replace(/px$/i, ''));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(-800, Math.min(800, Math.round(n)));
+}
+
+function sanitizeFontFamilyValue(raw) {
+  let s = String(raw == null ? '' : raw).replace(/[\r\n]/g, ' ').trim();
+  if (!s) return '';
+  const kvMatch = s.match(/^(?:"?editor\.fontFamily"?|font-family)\s*:\s*(.+?)\s*,?;?$/i);
+  if (kvMatch) {
+    s = kvMatch[1].trim();
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      s = s.slice(1, -1).trim();
+    }
+  }
+  s = s.replace(/[;{}<>]/g, '').trim();
+  return s.slice(0, 512);
+}
+
+function sanitizeFontsMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  let hasAny = false;
+  for (const key of ALLOWED_FONT_SLOT_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(raw, key) && typeof raw[key] === 'string') {
+      out[key] = sanitizeFontFamilyValue(raw[key]);
+      hasAny = true;
+    }
+  }
+  if (!out.global && typeof raw.sidebar === 'string' && raw.sidebar.trim()) {
+    out.global = sanitizeFontFamilyValue(raw.sidebar);
+    hasAny = true;
+  }
+  return hasAny ? out : null;
+}
+
 function sanitizeUiPrefs(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const modules = {};
@@ -840,6 +880,10 @@ function sanitizeUiPrefs(raw) {
   }
   const rawScale = String(raw.cjkFontScale ?? '').trim().replace(/%$/, '');
   const cjkFontScale = VALID_CJK_SCALES.has(rawScale) ? rawScale : null;
+  const chatOffsetX = Object.prototype.hasOwnProperty.call(raw, 'chatOffsetX')
+    ? sanitizeChatOffsetX(raw.chatOffsetX)
+    : null;
+  const fonts = sanitizeFontsMap(raw.fonts);
   const uiState = {};
   if (raw.uiState && typeof raw.uiState === 'object' && !Array.isArray(raw.uiState)) {
     if (typeof raw.uiState.recentCollapsed === 'boolean') {
@@ -850,7 +894,7 @@ function sanitizeUiPrefs(raw) {
     }
   }
   const updatedAt = Number(raw.updatedAt) > 0 ? Math.floor(Number(raw.updatedAt)) : 0;
-  return { modules, cjkFontScale, uiState, updatedAt };
+  return { modules, cjkFontScale, chatOffsetX, fonts, uiState, updatedAt };
 }
 
 function resolveEffectiveUserConfig(userConfigFile, rawCfg) {
@@ -876,6 +920,14 @@ function resolveEffectiveUserConfig(userConfigFile, rawCfg) {
   const mergedModules = manualConfigNewer
     ? Object.assign({}, prefs.modules, rawMods)
     : Object.assign({}, rawMods, prefs.modules);
+  const rawFonts = sanitizeFontsMap(baseObj.fonts) || {};
+  const prefFonts = prefs.fonts || {};
+  const mergedFonts = Object.assign({}, rawFonts, prefFonts);
+  if (manualConfigNewer) {
+    for (const key of ALLOWED_FONT_SLOT_KEYS) {
+      if (rawFonts[key]) mergedFonts[key] = rawFonts[key];
+    }
+  }
   const mergedUiState = Object.assign(
     {},
     baseObj.uiState && typeof baseObj.uiState === 'object' ? baseObj.uiState : {},
@@ -883,11 +935,15 @@ function resolveEffectiveUserConfig(userConfigFile, rawCfg) {
   );
   const out = Object.assign({}, baseObj, {
     modules: mergedModules,
+    fonts: mergedFonts,
     uiState: mergedUiState,
     uiPrefsUpdatedAt: prefs.updatedAt || Date.now()
   });
   if (prefs.cjkFontScale && (!manualConfigNewer || !baseObj.cjkFontScale)) {
     out.cjkFontScale = prefs.cjkFontScale;
+  }
+  if (prefs.chatOffsetX !== null && (!manualConfigNewer || baseObj.chatOffsetX == null)) {
+    out.chatOffsetX = prefs.chatOffsetX;
   }
   return out;
 }
@@ -896,16 +952,23 @@ export function saveUiPrefs(payload) {
   const cur = sanitizeUiPrefs(readJsonOrFallback(UI_PREFS_FILE, null)) || {
     modules: {},
     cjkFontScale: null,
+    chatOffsetX: null,
+    fonts: null,
     uiState: {},
     updatedAt: 0
   };
   const incoming = sanitizeUiPrefs(payload) || {
     modules: {},
     cjkFontScale: null,
+    chatOffsetX: null,
+    fonts: null,
     uiState: {},
     updatedAt: 0
   };
   const updatedAt = Math.max(Date.now(), cur.updatedAt + 1, incoming.updatedAt);
+  const mergedFonts =
+    cur.fonts || incoming.fonts ? Object.assign({}, cur.fonts || {}, incoming.fonts || {}) : null;
+  const resolvedOffsetX = incoming.chatOffsetX !== null ? incoming.chatOffsetX : cur.chatOffsetX;
   const next = {
     schema: 1,
     updatedAt,
@@ -913,6 +976,8 @@ export function saveUiPrefs(payload) {
     ...(incoming.cjkFontScale || cur.cjkFontScale
       ? { cjkFontScale: incoming.cjkFontScale || cur.cjkFontScale }
       : {}),
+    ...(resolvedOffsetX !== null ? { chatOffsetX: resolvedOffsetX } : {}),
+    ...(mergedFonts ? { fonts: mergedFonts } : {}),
     uiState: Object.assign({}, cur.uiState, incoming.uiState)
   };
   fs.mkdirSync(STATE_DIR, { recursive: true });
@@ -922,6 +987,8 @@ export function saveUiPrefs(payload) {
     updatedAt,
     modules: next.modules,
     cjkFontScale: next.cjkFontScale || null,
+    chatOffsetX: next.chatOffsetX ?? 0,
+    fonts: next.fonts || null,
     uiState: next.uiState
   };
 }

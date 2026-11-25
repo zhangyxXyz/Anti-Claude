@@ -153,8 +153,8 @@ body[data-agy-font] :where(.font-sans),
 }
 
 /* AI response prose & lists: unified sans-serif 14px / 1.65 with orphan prevention & strict CJK line-break rules */
-:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article),
-:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em) {
+:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article):not(code):not(pre):not(.font-mono):not(.monaco-editor):not(.cm-editor),
+:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em):not(code):not(pre):not(.font-mono):not(pre *):not(code *):not(.font-mono *):not(.monaco-editor *):not(.cm-editor *) {
   font-family: var(--font-sans) !important;
   font-variant-numeric: normal;
   letter-spacing: 0 !important;
@@ -3486,6 +3486,143 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-seg-btn[aria-check
   color: #FAF9F5 !important;
   font-weight: 500 !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32) !important;
+}
+
+/* Custom font family inputs inside Settings -> UI Enhancements */
+.ag-cux-settings-row-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  padding: 13px 16px !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-settings-row + .ag-cux-settings-row-stack,
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-settings-row-stack + .ag-cux-settings-row {
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.075)) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-settings-row + .ag-cux-settings-row-stack,
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-settings-row-stack + .ag-cux-settings-row {
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.09)) !important;
+}
+
+.ag-cux-font-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.ag-cux-font-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.ag-cux-font-item {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+.ag-cux-font-label {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  color: var(--foreground, #141413) !important;
+}
+
+.ag-cux-font-hint {
+  font-size: 11.5px !important;
+  font-weight: 400 !important;
+  color: var(--muted-foreground, #73726C) !important;
+}
+
+.ag-cux-font-input-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.ag-cux-font-input {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  line-height: 30px !important;
+  outline: none !important;
+  transition: border-color 140ms ease, box-shadow 140ms ease !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-font-input {
+  background-color: #F7F7F5 !important;
+  border: 1px solid rgba(20, 20, 19, 0.12) !important;
+  color: #141413 !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-font-input:focus {
+  background-color: #FFFFFF !important;
+  border-color: var(--primary, #2F75C3) !important;
+  box-shadow: 0 0 0 2px rgba(47, 117, 195, 0.14) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-font-input {
+  background-color: #1E1E1C !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ECECEA !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-font-input:focus {
+  background-color: #242422 !important;
+  border-color: var(--primary, #2F71E3) !important;
+  box-shadow: 0 0 0 2px rgba(47, 113, 227, 0.22) !important;
+}
+
+.ag-cux-font-btn {
+  appearance: none !important;
+  height: 30px !important;
+  padding: 0 9px !important;
+  border-radius: 7px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  font-weight: 450 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-font-btn {
+  background-color: #F2F1EE !important;
+  border: 1px solid rgba(20, 20, 19, 0.09) !important;
+  color: #555450 !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-cux-font-btn:hover {
+  background-color: #E8E7E2 !important;
+  color: #141413 !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-font-btn {
+  background-color: #323230 !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  color: #B4B3AD !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-cux-font-btn:hover {
+  background-color: #3C3C39 !important;
+  color: #FAF9F5 !important;
+}
+
+.ag-cux-font-btn[hidden] {
+  display: none !important;
 }
 
 
@@ -7078,11 +7215,21 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="overview-pan
   cursor: pointer;
 }
 
+/* Widen right Overview panel slightly so quota percentages & cards never clip */
+[data-testid="overview-panel-host-gutter"]:has([data-testid="overview-panel"][data-ag-ov-enhanced="1"]) {
+  width: 376px !important;
+  max-width: calc(100% - 16px) !important;
+}
+
+[data-testid="overview-panel-host"]:has([data-testid="overview-panel"][data-ag-ov-enhanced="1"]) {
+  --overview-panel-gutter-reserve: 392px !important;
+}
+
 #ag-claude-ov-sections .ag-ov-other-pools-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
+  gap: 8px;
+  padding-top: 6px;
 }
 
 #ag-claude-ov-sections .ag-ov-mini-meter-wrap {

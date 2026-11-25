@@ -20,9 +20,48 @@
   const cfgUiPrefsTs = Number(CFG_ROOT.uiPrefsUpdatedAt) > 0 ? Number(CFG_ROOT.uiPrefsUpdatedAt) : 0;
   const MODULE_STORAGE_KEY = 'ag_claude_ux_modules_v1';
   const VALID_CJK_SCALES = ['94.5', '95', '100'];
+  const FONT_SLOT_KEYS = ['global', 'main', 'overview', 'mono'];
+  const CUSTOM_FONT_STYLE_ID = 'ag-custom-font-overrides';
   function normalizeCjkScale(v) {
     const s = String(v == null ? '' : v).trim().replace(/%$/, '');
     return VALID_CJK_SCALES.includes(s) ? s : null;
+  }
+  function normalizeChatOffsetX(v) {
+    if (v === '' || v == null) return 0;
+    const n = Number(String(v).trim().replace(/px$/i, ''));
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(-800, Math.min(800, Math.round(n)));
+  }
+  function sanitizeFontFamilyInput(raw) {
+    let s = String(raw == null ? '' : raw).replace(/[\r\n]/g, ' ').trim();
+    if (!s) return '';
+    const kvMatch = s.match(/^(?:"?editor\.fontFamily"?|font-family)\s*:\s*(.+?)\s*,?;?$/i);
+    if (kvMatch) {
+      s = kvMatch[1].trim();
+      if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+        s = s.slice(1, -1).trim();
+      }
+    }
+    return s.replace(/[;{}<>]/g, '').trim().slice(0, 512);
+  }
+  function resolveInitialFonts(localOverridesObj, cfgRootObj) {
+    const localFonts =
+      localOverridesObj && localOverridesObj.fonts && typeof localOverridesObj.fonts === 'object'
+        ? localOverridesObj.fonts
+        : {};
+    const cfgFonts =
+      cfgRootObj && cfgRootObj.fonts && typeof cfgRootObj.fonts === 'object' ? cfgRootObj.fonts : {};
+    const out = {};
+    for (const key of FONT_SLOT_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(localFonts, key)) {
+        out[key] = sanitizeFontFamilyInput(localFonts[key]);
+      } else if (Object.prototype.hasOwnProperty.call(cfgFonts, key)) {
+        out[key] = sanitizeFontFamilyInput(cfgFonts[key]);
+      } else {
+        out[key] = '';
+      }
+    }
+    return out;
   }
   function loadLocalModuleOverrides() {
     try {
@@ -56,6 +95,82 @@
     normalizeCjkScale(localModOverrides.cjkFontScale) ||
     normalizeCjkScale(CFG_ROOT.cjkFontScale) ||
     '95';
+  let currentChatOffsetX = Object.prototype.hasOwnProperty.call(localModOverrides, 'chatOffsetX')
+    ? normalizeChatOffsetX(localModOverrides.chatOffsetX)
+    : normalizeChatOffsetX(CFG_ROOT.chatOffsetX);
+  let currentFonts = resolveInitialFonts(localModOverrides, CFG_ROOT);
+  function applyCustomFontOverrides() {
+    const rules = [];
+    if (currentFonts.global) {
+      const f = currentFonts.global;
+      rules.push(`:root, html, body, body[data-agy-theme], body[data-agy-theme] :where(.font-sans), body[data-agy-font], body[data-agy-font="google-sans"], body[data-agy-font="inter"], body[data-agy-font] :where(.font-sans), .pdf-sdk-root {
+  --ag-sans-stack: ${f} !important;
+  --vscode-font-family: ${f} !important;
+  --font-sans: ${f} !important;
+  --font-editor-sans: ${f} !important;
+  --default-font-family: ${f} !important;
+  --font-family: ${f} !important;
+  --sdk-font-family: ${f} !important;
+  --sdk-comment-font-family: ${f} !important;
+}`);
+    }
+    if (currentFonts.mono) {
+      const m = currentFonts.mono;
+      rules.push(`:root, html, body, body[data-agy-theme], body[data-agy-font], .pdf-sdk-root {
+  --editor-font-family: ${m} !important;
+  --vscode-editor-font-family: ${m} !important;
+  --font-mono: ${m} !important;
+  --default-mono-font-family: ${m} !important;
+  --sdk-font-family-mono: ${m} !important;
+}
+:is(pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #ag-live-metrics-text, .monaco-editor .view-lines, .cm-editor .cm-content, .cm-editor .cm-line),
+:is(pre, code, .font-mono, .monaco-editor .view-lines, .cm-editor .cm-content, .cm-editor .cm-line) :is(span, td, th, div, a) {
+  font-family: ${m} !important;
+}`);
+    }
+    if (currentFonts.main) {
+      const mn = currentFonts.main;
+      rules.push(`:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]),
+:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em, div, a):not(code):not(pre):not(.font-mono):not(pre *):not(code *):not(.font-mono *) {
+  --font-sans: ${mn} !important;
+  --font-editor-sans: ${mn} !important;
+  font-family: ${mn} !important;
+}`);
+    }
+    if (currentFonts.overview) {
+      const ov = currentFonts.overview;
+      rules.push(`[data-testid="overview-panel"],
+[data-testid="overview-panel"] :is(div, span, p, a, button, h1, h2, h3, h4, li, label):not(code):not(pre):not(.font-mono) {
+  --font-sans: ${ov} !important;
+  --font-family: ${ov} !important;
+  font-family: ${ov} !important;
+}`);
+    }
+    if (currentChatOffsetX !== 0) {
+      const colW = 'max(30vw, var(--max-conversation-width, 48rem))';
+      const freeSpace = `max(0px, calc(100% - ${colW}))`;
+      const clampedLeft = `clamp(0px, calc((100% - ${colW}) / 2 + ${currentChatOffsetX}px), ${freeSpace})`;
+      rules.push(`div.items-center:has(> div[style*="--max-conversation-width"]) {
+  align-items: stretch !important;
+}
+div.mx-auto[style*="--max-conversation-width"],
+div.items-center > div[style*="--max-conversation-width"] {
+  margin-left: ${clampedLeft} !important;
+  margin-right: auto !important;
+}`);
+    }
+    let styleEl = document.getElementById(CUSTOM_FONT_STYLE_ID);
+    if (rules.length === 0) {
+      if (styleEl) styleEl.remove();
+      return;
+    }
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = CUSTOM_FONT_STYLE_ID;
+      (document.head || document.documentElement).appendChild(styleEl);
+    }
+    styleEl.textContent = rules.join('\n');
+  }
   function effectiveModBool(key, defaultVal = true) {
     if (Object.prototype.hasOwnProperty.call(localModOverrides, key)) {
       return Boolean(localModOverrides[key]);
@@ -101,6 +216,7 @@
     docRoot.setAttribute('data-ag-ux-lang', FEAT.i18n ? 'zh' : 'en');
     docRoot.setAttribute('data-ag-cjk-scale', currentCjkScale);
   }
+  applyCustomFontOverrides();
 
   const userToggled = new WeakSet();
   const autoExpandCount = new WeakMap();
@@ -6748,6 +6864,46 @@
     ['100', '100%']
   ];
 
+  const DEFAULT_SANS_FONT_STACK =
+    "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Segoe UI', Roboto, sans-serif";
+  const DEFAULT_MONO_FONT_STACK =
+    "'SF Mono', 'Anthropic Mono', 'Anthropic Mono Web', Menlo, Consolas, 'PingFang SC', 'Microsoft YaHei UI', ui-monospace, monospace";
+
+  const FONT_SETTING_ITEMS = [
+    [
+      'global',
+      'UI 字体',
+      'Interface UI Font',
+      '留空使用默认，控制整个界面 UI（侧边栏、底栏按钮、设置与菜单）',
+      'Blank uses default. Controls all UI chrome (sidebar, footer, settings, menus).',
+      DEFAULT_SANS_FONT_STACK
+    ],
+    [
+      'main',
+      '对话界面字体',
+      'Conversation Font',
+      '留空继承 UI 字体（仅控制中间回复、气泡与输入正文）',
+      'Blank inherits UI font (responses, bubbles, composer text).',
+      DEFAULT_SANS_FONT_STACK
+    ],
+    [
+      'overview',
+      '右侧概览字体',
+      'Overview Panel Font',
+      '留空继承 UI 字体',
+      'Blank inherits UI font.',
+      DEFAULT_SANS_FONT_STACK
+    ],
+    [
+      'mono',
+      '代码 / 等宽字体 (editor.fontFamily)',
+      'Code & Monospace Font (editor.fontFamily)',
+      '留空使用默认，覆盖代码块、行内代码、Diff 视图与指标栏',
+      'Blank uses default. Overrides code blocks, inline code, diffs, and metrics.',
+      DEFAULT_MONO_FONT_STACK
+    ]
+  ];
+
   const SETTINGS_GROUPS = [
     {
       id: 'lang-typo',
@@ -6940,6 +7096,82 @@
                         }">${label}</button>`
                     ).join('')}
                   </div>
+                </div>
+                <div class="ag-cux-settings-row-stack">
+                  <div class="ag-cux-font-header">
+                    <div style="min-width:0">
+                      <div class="ag-cux-settings-title">${escapeHtml(L('自定义字体覆盖', 'Custom Font Families'))}</div>
+                      <div class="ag-cux-settings-desc">${escapeHtml(
+                        L(
+                          '留空即使用默认字体，填写 CSS font-family 字体栈（支持直接粘贴 VS Code 的 "editor.fontFamily": "..."），回车或失焦后即时生效。',
+                          'Leave blank to use defaults. Enter a CSS font-family stack (or paste VS Code "editor.fontFamily": "..."), then press Enter or blur to apply.'
+                        )
+                      )}</div>
+                    </div>
+                    <button type="button" class="ag-cux-font-btn" data-ag-cux-font-reset-all ${
+                      FONT_SLOT_KEYS.some((k) => Boolean(currentFonts[k])) ? '' : 'hidden'
+                    }>${escapeHtml(L('全部恢复默认', 'Reset All'))}</button>
+                  </div>
+                  <div class="ag-cux-font-list">
+                    ${FONT_SETTING_ITEMS.map(
+                      ([slot, labelZh, labelEn, hintZh, hintEn, ph]) => `
+                      <div class="ag-cux-font-item">
+                        <div class="ag-cux-font-label">
+                          <span>${escapeHtml(L(labelZh, labelEn))}</span>
+                          <span class="ag-cux-font-hint">${escapeHtml(L(hintZh, hintEn))}</span>
+                        </div>
+                        <div class="ag-cux-font-input-row">
+                          <input
+                            type="text"
+                            class="ag-cux-font-input"
+                            data-ag-cux-font-input="${slot}"
+                            value="${escapeHtml(currentFonts[slot] || '')}"
+                            placeholder="${escapeHtml(
+                              slot === 'main' || slot === 'overview' ? currentFonts.global || ph : ph
+                            )}"
+                            spellcheck="false"
+                            autocomplete="off"
+                          />
+                          <button
+                            type="button"
+                            class="ag-cux-font-btn"
+                            data-ag-cux-font-clear="${slot}"
+                            ${currentFonts[slot] ? '' : 'hidden'}
+                          >${escapeHtml(L('清空', 'Clear'))}</button>
+                        </div>
+                      </div>`
+                    ).join('')}
+                  </div>
+                </div>
+                <div class="ag-cux-settings-row">
+                  <div style="min-width:0">
+                    <div class="ag-cux-settings-title">${escapeHtml(L('对话区水平偏移 (px)', 'Conversation Horizontal Offset (px)'))}</div>
+                    <div class="ag-cux-settings-desc">${escapeHtml(
+                      L(
+                        '宽屏下微调居中位置：填负数向左移（如 -160），填 0 或留空恢复原版居中，回车或失焦即时生效。',
+                        'Shift centered chat and composer horizontally on wide screens: negative moves left (e.g. -160), 0 or blank restores default.'
+                      )
+                    )}</div>
+                  </div>
+                  <div class="ag-cux-font-input-row" style="flex-shrink:0">
+                    <input
+                      type="number"
+                      step="10"
+                      min="-800"
+                      max="800"
+                      class="ag-cux-font-input"
+                      style="width:96px !important;flex:0 0 96px !important;text-align:right"
+                      data-ag-cux-chat-offset-x
+                      value="${currentChatOffsetX !== 0 ? String(currentChatOffsetX) : ''}"
+                      placeholder="0"
+                    />
+                    <button
+                      type="button"
+                      class="ag-cux-font-btn"
+                      data-ag-cux-chat-offset-reset
+                      ${currentChatOffsetX !== 0 ? '' : 'hidden'}
+                    >${escapeHtml(L('归零', 'Reset'))}</button>
+                  </div>
                 </div>`
                   : ''
               }
@@ -6960,6 +7192,44 @@
         setCjkScaleOverride(btn.getAttribute('data-ag-cux-cjk-scale'));
       });
     });
+    const offsetInput = panel.querySelector('[data-ag-cux-chat-offset-x]');
+    if (offsetInput) {
+      const commitOffset = () => setChatOffsetXOverride(offsetInput.value);
+      offsetInput.addEventListener('change', commitOffset);
+      offsetInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitOffset();
+          offsetInput.blur();
+        }
+      });
+    }
+    const offsetResetBtn = panel.querySelector('[data-ag-cux-chat-offset-reset]');
+    if (offsetResetBtn) {
+      offsetResetBtn.addEventListener('click', () => setChatOffsetXOverride(0));
+    }
+    panel.querySelectorAll('[data-ag-cux-font-input]').forEach((input) => {
+      const slot = input.getAttribute('data-ag-cux-font-input');
+      const commit = () => setFontOverride(slot, input.value);
+      input.addEventListener('change', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          input.blur();
+        }
+      });
+    });
+    panel.querySelectorAll('[data-ag-cux-font-clear]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slot = btn.getAttribute('data-ag-cux-font-clear');
+        setFontOverride(slot, '');
+      });
+    });
+    const resetAllBtn = panel.querySelector('[data-ag-cux-font-reset-all]');
+    if (resetAllBtn) {
+      resetAllBtn.addEventListener('click', () => resetAllFonts());
+    }
   }
 
   function applyImmediateFeatureEffects(featKey, on) {
@@ -7055,6 +7325,8 @@
       updatedAt,
       modules: modulesPayload,
       cjkFontScale: currentCjkScale,
+      chatOffsetX: currentChatOffsetX,
+      fonts: Object.assign({}, currentFonts),
       uiState: {
         recentCollapsed: Boolean(recentCollapsed),
         unifiedRecentCollapsed: Boolean(unifiedRecentCollapsed)
@@ -7089,6 +7361,51 @@
     flashSettingsSavedToast();
   }
 
+  function setChatOffsetXOverride(rawVal) {
+    const next = normalizeChatOffsetX(rawVal);
+    if (currentChatOffsetX === next) {
+      syncSettingsSwitchesUi();
+      return;
+    }
+    currentChatOffsetX = next;
+    localModOverrides.chatOffsetX = next;
+    persistUiPrefsToDaemon();
+    applyCustomFontOverrides();
+    syncSettingsSwitchesUi();
+    flashSettingsSavedToast();
+  }
+
+  function setFontOverride(slot, rawValue) {
+    if (!FONT_SLOT_KEYS.includes(slot)) return;
+    const next = sanitizeFontFamilyInput(rawValue);
+    if (currentFonts[slot] === next) {
+      syncSettingsSwitchesUi();
+      return;
+    }
+    currentFonts[slot] = next;
+    localModOverrides.fonts = Object.assign({}, currentFonts);
+    persistUiPrefsToDaemon();
+    applyCustomFontOverrides();
+    syncSettingsSwitchesUi();
+    flashSettingsSavedToast();
+  }
+
+  function resetAllFonts() {
+    let changed = false;
+    for (const key of FONT_SLOT_KEYS) {
+      if (currentFonts[key]) {
+        currentFonts[key] = '';
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    localModOverrides.fonts = Object.assign({}, currentFonts);
+    persistUiPrefsToDaemon();
+    applyCustomFontOverrides();
+    syncSettingsSwitchesUi();
+    flashSettingsSavedToast();
+  }
+
   function setModuleOverride(modKey, featKey, nextBool) {
     localModOverrides[modKey] = Boolean(nextBool);
     FEAT[featKey] = Boolean(nextBool);
@@ -7109,6 +7426,30 @@
     settingsPanelEl.querySelectorAll('[data-ag-cux-cjk-scale]').forEach((btn) => {
       btn.setAttribute('aria-checked', String(btn.getAttribute('data-ag-cux-cjk-scale') === currentCjkScale));
     });
+    const offsetInput = settingsPanelEl.querySelector('[data-ag-cux-chat-offset-x]');
+    if (offsetInput) {
+      const nextStr = currentChatOffsetX !== 0 ? String(currentChatOffsetX) : '';
+      if (offsetInput.value !== nextStr) offsetInput.value = nextStr;
+    }
+    const offsetResetBtn = settingsPanelEl.querySelector('[data-ag-cux-chat-offset-reset]');
+    if (offsetResetBtn) offsetResetBtn.hidden = currentChatOffsetX === 0;
+    let anyFont = false;
+    const inheritedSans = currentFonts.global || DEFAULT_SANS_FONT_STACK;
+    for (const slot of FONT_SLOT_KEYS) {
+      const val = currentFonts[slot] || '';
+      if (val) anyFont = true;
+      const inp = settingsPanelEl.querySelector(`[data-ag-cux-font-input="${slot}"]`);
+      if (inp) {
+        if (inp.value !== val) inp.value = val;
+        if (slot === 'main' || slot === 'overview') {
+          inp.placeholder = inheritedSans;
+        }
+      }
+      const clr = settingsPanelEl.querySelector(`[data-ag-cux-font-clear="${slot}"]`);
+      if (clr) clr.hidden = !val;
+    }
+    const resetAllBtn = settingsPanelEl.querySelector('[data-ag-cux-font-reset-all]');
+    if (resetAllBtn) resetAllBtn.hidden = !anyFont;
   }
 
   function closeClaudeUxSettingsPane() {
@@ -13300,72 +13641,53 @@
       const primaryBuckets = sortBuckets(primaryGrp.buckets);
 
       const fmtOvQuotaPct = formatQuotaUsedPctStr;
+      const renderQuotaBucketBox = (groupShortName, b) => {
+        const rem =
+          b.remaining && b.remaining.case === 'remainingFraction' && typeof b.remaining.value === 'number'
+            ? b.remaining.value
+            : typeof b.remainingFraction === 'number'
+              ? b.remainingFraction
+              : 1;
+        const usedRaw = Math.max(0, Math.min(100, (1 - rem) * 100));
+        const usedPctStr = fmtOvQuotaPct(usedRaw);
+        const remPctStr = fmtOvQuotaPct(100 - usedRaw);
+        const winTag = localizeQuotaWindowTag(b.window, b.displayName || '');
+        const col = ovQuotaUsedColor(usedRaw);
+        const litCount = usedRaw <= 0 ? 0 : Math.min(20, Math.max(1, Math.round(usedRaw / 5)));
+        const segsHtml = Array.from({ length: 20 }, (_, i) =>
+          `<span class="ag-ov-seg" style="background:${i < litCount ? col : 'var(--ag-ov-track)'}"></span>`
+        ).join('');
+        const elapsedPct = computeWindowElapsedPct(b, usedRaw);
+        const cursorHtml =
+          elapsedPct !== null
+            ? `<div class="ag-ov-time-track" title="${escapeHtml(L(`窗口时间已流逝 ${elapsedPct}%`, `Window elapsed ${elapsedPct}%`))}">
+                <div class="ag-ov-time-fill" style="width:${elapsedPct}%"></div>
+                <span class="ag-ov-time-cursor" style="left:${elapsedPct}%"></span>
+              </div>`
+            : '';
+        const resetTxt = formatResetLabel(b, usedRaw);
+        return `<div class="ag-ov-quota-box" title="${escapeHtml(L(`已用 ${usedPctStr}% · 剩余 ${remPctStr}%`, `${usedPctStr}% used · ${remPctStr}% left`))}">
+          <div class="ag-ov-kv-row">
+            <span class="ag-ov-row-left">
+              <i class="ag-ov-qdot" style="background:${col}"></i>
+              <span class="ag-ov-qtitle">${escapeHtml(groupShortName)}${winTag ? ` · ${escapeHtml(winTag)}` : ''}</span>
+            </span>
+            <span class="ag-ov-qpct">${usedPctStr}% ${L('已用', 'used')}</span>
+          </div>
+          <div class="ag-ov-seg-bar">${segsHtml}</div>
+          ${cursorHtml}
+          ${resetTxt ? `<div class="ag-ov-reset-txt">${escapeHtml(resetTxt)}</div>` : ''}
+        </div>`;
+      };
 
-      const primaryHtml = primaryBuckets
-        .map((b) => {
-          const rem =
-            b.remaining && b.remaining.case === 'remainingFraction' && typeof b.remaining.value === 'number'
-              ? b.remaining.value
-              : typeof b.remainingFraction === 'number'
-                ? b.remainingFraction
-                : 1;
-          const usedRaw = Math.max(0, Math.min(100, (1 - rem) * 100));
-          const usedPct = Math.round(usedRaw);
-          const usedPctStr = fmtOvQuotaPct(usedRaw);
-          const remPctStr = fmtOvQuotaPct(100 - usedRaw);
-          const winTag = localizeQuotaWindowTag(b.window, b.displayName || '');
-          const col = ovQuotaUsedColor(usedRaw);
-          const litCount = usedRaw <= 0 ? 0 : Math.min(20, Math.max(1, Math.round(usedRaw / 5)));
-          const segsHtml = Array.from({ length: 20 }, (_, i) =>
-            `<span class="ag-ov-seg" style="background:${i < litCount ? col : 'var(--ag-ov-track)'}"></span>`
-          ).join('');
-          const elapsedPct = computeWindowElapsedPct(b, usedRaw);
-          const cursorHtml =
-            elapsedPct !== null
-              ? `<div class="ag-ov-time-track" title="${escapeHtml(L(`窗口时间已流逝 ${elapsedPct}%`, `Window elapsed ${elapsedPct}%`))}">
-                  <div class="ag-ov-time-fill" style="width:${elapsedPct}%"></div>
-                  <span class="ag-ov-time-cursor" style="left:${elapsedPct}%"></span>
-                </div>`
-              : '';
-          const resetTxt = formatResetLabel(b, usedRaw);
-          return `<div class="ag-ov-quota-box" title="${escapeHtml(L(`已用 ${usedPctStr}% · 剩余 ${remPctStr}%`, `${usedPctStr}% used · ${remPctStr}% left`))}">
-            <div class="ag-ov-kv-row">
-              <span class="ag-ov-row-left">
-                <i class="ag-ov-qdot" style="background:${col}"></i>
-                <span class="ag-ov-qtitle">${escapeHtml(pShort)} · ${escapeHtml(winTag)}</span>
-              </span>
-              <span class="ag-ov-qpct">${usedPctStr}% ${L('已用', 'used')}</span>
-            </div>
-            <div class="ag-ov-seg-bar">${segsHtml}</div>
-            ${cursorHtml}
-            ${resetTxt ? `<div class="ag-ov-reset-txt">${escapeHtml(resetTxt)}</div>` : ''}
-          </div>`;
-        })
-        .join('');
+      const primaryHtml = primaryBuckets.map((b) => renderQuotaBucketBox(pShort, b)).join('');
 
       const otherRows = [];
       groups.forEach((g, idx) => {
         if (idx === pIdx) return;
         const gShort = localizeGroupShortName(g.displayName);
         for (const b of sortBuckets(g.buckets)) {
-          const rem =
-            b.remaining && b.remaining.case === 'remainingFraction' && typeof b.remaining.value === 'number'
-              ? b.remaining.value
-              : typeof b.remainingFraction === 'number'
-                ? b.remainingFraction
-                : 1;
-          const usedRaw = Math.max(0, Math.min(100, (1 - rem) * 100));
-          const usedPctStr = fmtOvQuotaPct(usedRaw);
-          const remPctStr = fmtOvQuotaPct(100 - usedRaw);
-          const winTag = localizeQuotaWindowTag(b.window, b.displayName || '');
-          const col = ovQuotaUsedColor(usedRaw);
-          otherRows.push(`<div class="ag-ov-other-pool-row" title="${escapeHtml(L(`已用 ${usedPctStr}% · 剩余 ${remPctStr}%`, `${usedPctStr}% used · ${remPctStr}% left`))}">
-            <span class="ag-ov-muted ag-ov-trunc">${escapeHtml(gShort)}${winTag ? ` · ${escapeHtml(winTag)}` : ''}</span>
-            <span class="ag-ov-mini-meter-wrap">
-              <span class="ag-ov-mini-track"><span class="ag-ov-mini-fill" style="width:${usedRaw.toFixed(1)}%;background:${col}"></span></span>
-              <span class="ag-ov-mini-pct">${usedPctStr}%</span>
-            </span>
-          </div>`);
+          otherRows.push(renderQuotaBucketBox(gShort, b));
         }
       });
 
@@ -13930,7 +14252,7 @@
     }
     document
       .querySelectorAll(
-        '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop'
+        '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, #ag-custom-font-overrides'
       )
       .forEach((el) => el.remove());
     document
