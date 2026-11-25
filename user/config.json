@@ -32,7 +32,8 @@
     "claudeUxHideSidebarProjects": true,
     "claudeUxCustomizations": true,
     "claudeUxCodeFold": true,
-    "claudeUxOverviewPanel": true
+    "claudeUxOverviewPanel": true,
+    "claudeUxGlass": true
   },
   "selectors": {
     "excludeI18n": "[data-testid=\"permissions-selector-trigger\"], [data-testid=\"model-selector-trigger\"], [data-ag-i18n-ignore=\"1\"], #ag-claude-model-popover, #ag-claude-model-subpop"

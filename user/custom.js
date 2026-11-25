@@ -194,7 +194,8 @@ div.items-center > div[style*="--max-conversation-width"] {
     hideSidebarProjects: effectiveModBool('claudeUxHideSidebarProjects', true),
     customizations: effectiveModBool('claudeUxCustomizations', true),
     codeFold: effectiveModBool('claudeUxCodeFold', true),
-    overviewPanel: effectiveModBool('claudeUxOverviewPanel', true)
+    overviewPanel: effectiveModBool('claudeUxOverviewPanel', true),
+    glass: effectiveModBool('claudeUxGlass', true)
   };
   const L = (zh, en) => (FEAT.i18n ? zh : en);
 
@@ -215,6 +216,8 @@ div.items-center > div[style*="--max-conversation-width"] {
   if (docRoot) {
     docRoot.setAttribute('data-ag-ux-lang', FEAT.i18n ? 'zh' : 'en');
     docRoot.setAttribute('data-ag-cjk-scale', currentCjkScale);
+    if (FEAT.glass) docRoot.setAttribute('data-ag-glass', 'on');
+    else docRoot.removeAttribute('data-ag-glass');
   }
   applyCustomFontOverrides();
 
@@ -6917,6 +6920,14 @@ div.items-center > div[style*="--max-conversation-width"] {
           'Chinese UI Localization',
           '将 Antigravity 原生界面与增强面板切换为简体中文（默认关闭，保持英文原版界面）',
           'Translate Antigravity UI and enhancement panels into Simplified Chinese (English by default)'
+        ],
+        [
+          'claudeUxGlass',
+          'glass',
+          '通透毛玻璃质感',
+          'Subtle Frosted Glass',
+          '为侧边栏、底部输入框、右侧概览与浮层卡片开启轻度半透磨砂与微高光描边，层次更通透',
+          'Enables subtle frosted glass translucency and hairline highlights on sidebar, composer, overview panel, and popovers'
         ]
       ]
     },
@@ -7289,6 +7300,11 @@ div.items-center > div[style*="--max-conversation-width"] {
     } else if (featKey === 'overviewPanel') {
       if (!on) teardownOverviewPanel();
       else syncOverviewPanel(true);
+    } else if (featKey === 'glass') {
+      if (docRoot) {
+        if (on) docRoot.setAttribute('data-ag-glass', 'on');
+        else docRoot.removeAttribute('data-ag-glass');
+      }
     }
     syncSidebarEnhancements();
     scheduleSync();
@@ -14274,6 +14290,7 @@ div.items-center > div[style*="--max-conversation-width"] {
     if (docRoot) {
       docRoot.removeAttribute('data-ag-ux-lang');
       docRoot.removeAttribute('data-ag-cjk-scale');
+      docRoot.removeAttribute('data-ag-glass');
     }
     if (window.__agClaudeUxDispose === dispose) window.__agClaudeUxDispose = null;
   }

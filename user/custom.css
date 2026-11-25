@@ -172,9 +172,22 @@ body[data-agy-font] :where(.font-sans),
   line-break: strict !important;
 }
 
-:is([data-testid="planner-response-text"], [data-markdown-root], .prose, .markdown) :is(ul, ol) {
+html body :is([data-testid="planner-response-text"], [data-markdown-root], .prose, .markdown) :is(ul, ol) {
   margin-top: 0.45em !important;
   margin-bottom: 0.65em !important;
+}
+
+/* Beat Tailwind v4 @layer utilities `[&>ol:not(.contains-task-list)]:!ps-4` via earlier @layer base !important */
+@layer base {
+  html body :is([data-testid="planner-response-text"], [data-markdown-root], .prose, .markdown) :is(ul, ol):not(.contains-task-list) {
+    padding-left: 1.65em !important;
+    padding-inline-start: 1.65em !important;
+  }
+
+  html body :is([data-testid="planner-response-text"], [data-markdown-root], .prose, .markdown) ol:not(.contains-task-list) {
+    padding-left: 2.15em !important;
+    padding-inline-start: 2.15em !important;
+  }
 }
 
 :is([data-testid="planner-response-text"], [data-markdown-root], .prose, .markdown) li + li {
@@ -7230,6 +7243,141 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="overview-pan
   flex-direction: column;
   gap: 8px;
   padding-top: 6px;
+}
+
+/* ==========================================================================
+ * 12. Subtle Frosted Glass / Glassmorphism (`claudeUxGlass` -> html[data-ag-glass="on"])
+ *     Restrained translucency + hairline highlights (browser-hole safe)
+ * ========================================================================== */
+html[data-ag-glass="on"] .surface-glass {
+  backdrop-filter: blur(18px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(145%) !important;
+}
+
+/* Subtle ambient depth on canvas (never covers native browser cutouts) */
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) body:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) {
+  background-image:
+    radial-gradient(920px 560px at 14% -8%, rgba(86, 134, 214, 0.075), transparent 62%),
+    radial-gradient(760px 520px at 88% 108%, rgba(154, 128, 214, 0.055), transparent 60%) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) {
+  background-image:
+    radial-gradient(920px 560px at 14% -8%, rgba(47, 117, 195, 0.05), transparent 62%),
+    radial-gradient(760px 520px at 88% 108%, rgba(168, 148, 218, 0.04), transparent 60%) !important;
+}
+
+/* Left Sidebar: airy translucent surface without duplicate inner borders */
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) .bg-sidebar:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) {
+  background-color: rgba(22, 22, 21, 0.80) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark) .bg-sidebar:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]) {
+  background-color: rgba(247, 247, 244, 0.82) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+}
+
+/* Floating Composer: frosted glass card with specular hairline top edge */
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) #antigravity\.agentSidePanelInputBox {
+  background-color: rgba(34, 34, 32, 0.70) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark) #antigravity\.agentSidePanelInputBox {
+  background-color: rgba(255, 255, 255, 0.76) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border-color: rgba(20, 20, 19, 0.09) !important;
+  box-shadow: 0 8px 24px rgba(15, 15, 14, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Right Overview Panel & Cards: translucent floating glass drawer with clear 3-step tonal hierarchy */
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) [data-testid="overview-panel-host-gutter"] {
+  background-color: rgba(18, 18, 17, 0.68) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.36) !important;
+}
+
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) [data-testid="overview-panel"][data-ag-ov-enhanced="1"] {
+  --ag-ov-card: rgba(36, 36, 34, 0.58) !important;
+  --ag-ov-subtle: rgba(52, 52, 49, 0.52) !important;
+  --ag-ov-hover: rgba(64, 64, 60, 0.62) !important;
+  --ag-ov-border: rgba(255, 255, 255, 0.05) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="overview-panel-host-gutter"] {
+  background-color: rgba(244, 244, 240, 0.72) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  box-shadow: 0 12px 30px rgba(15, 15, 14, 0.08) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="overview-panel"][data-ag-ov-enhanced="1"] {
+  --ag-ov-card: rgba(255, 255, 255, 0.76) !important;
+  --ag-ov-subtle: rgba(242, 242, 238, 0.72) !important;
+  --ag-ov-hover: rgba(235, 235, 230, 0.80) !important;
+  --ag-ov-border: rgba(20, 20, 19, 0.055) !important;
+}
+
+/* Popovers, Model Picker, Quota Card & Settings Groups */
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is(#ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, #ag-claude-quota-popover, #ag-live-metrics-tooltip, .ag-cux-settings-group) {
+  background-color: rgba(36, 36, 34, 0.76) !important;
+  backdrop-filter: blur(18px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+html[data-ag-glass="on"]:not([data-ag-theme-mode="dark"]) body:not(.dark) :is(#ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, #ag-claude-quota-popover, #ag-live-metrics-tooltip, .ag-cux-settings-group) {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(18px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+  border-color: rgba(20, 20, 19, 0.085) !important;
+  box-shadow: 0 10px 26px rgba(15, 15, 14, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Codex-style prominent user message capsule bubble (high-contrast deep blue in dark, soft blue in light) */
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .agy-user-bubble-frame {
+  background: rgba(96, 165, 250, 0.24) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) :is([data-testid="user-message-bubble"], .agy-user-bubble) {
+  background-color: #1A3A6E !important;
+  padding: 8px 15px !important;
+  color: #F3F7FF !important;
+  box-shadow: 0 3px 12px rgba(10, 24, 52, 0.28), inset 0 1px 0 rgba(147, 197, 253, 0.16) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) :is([data-testid="user-message-bubble"], .agy-user-bubble) :is(p, span, div, li, .select-text):not(code):not(pre):not(a):not(a *):not([data-testid="skill-scope-item-pill"]):not([data-testid="skill-scope-item-pill"] *) {
+  color: #F3F7FF !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) .agy-user-bubble-frame {
+  background: rgba(37, 99, 235, 0.20) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) :is([data-testid="user-message-bubble"], .agy-user-bubble) {
+  background-color: #E8F1FD !important;
+  padding: 8px 15px !important;
+  color: #102A56 !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) :is([data-testid="user-message-bubble"], .agy-user-bubble) :is(p, span, div, li, .select-text):not(code):not(pre):not(a):not(a *):not([data-testid="skill-scope-item-pill"]):not([data-testid="skill-scope-item-pill"] *) {
+  color: #102A56 !important;
+}
+
+html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is([data-testid="user-message-bubble"], .agy-user-bubble) {
+  background-color: rgba(26, 58, 110, 0.84) !important;
+  backdrop-filter: blur(12px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
 }
 
 #ag-claude-ov-sections .ag-ov-mini-meter-wrap {

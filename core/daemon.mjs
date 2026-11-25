@@ -94,6 +94,7 @@ const ALLOWED_UI_MODULE_KEYS = new Set([
   'claudeUxRecentSection',
   'claudeUxProjects',
   'claudeUxHideSidebarProjects',
+  'claudeUxGlass',
   'claudeUxCustomizations',
   'claudeUxCodeFold',
   'claudeUxOverviewPanel'
