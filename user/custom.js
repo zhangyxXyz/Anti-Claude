@@ -95,6 +95,14 @@
     normalizeCjkScale(localModOverrides.cjkFontScale) ||
     normalizeCjkScale(CFG_ROOT.cjkFontScale) ||
     '95';
+  const CW_MODE_STORAGE_KEY = 'ag_claude_ux_cw_mode_v1';
+  let currentCwMode = (() => {
+    try {
+      const v = typeof localStorage === 'object' && localStorage ? localStorage.getItem(CW_MODE_STORAGE_KEY) : null;
+      if (v === 'chat' || v === 'work') return v;
+    } catch {}
+    return 'work';
+  })();
   let currentChatOffsetX = Object.prototype.hasOwnProperty.call(localModOverrides, 'chatOffsetX')
     ? normalizeChatOffsetX(localModOverrides.chatOffsetX)
     : normalizeChatOffsetX(CFG_ROOT.chatOffsetX);
@@ -112,11 +120,20 @@
   --font-family: ${f} !important;
   --sdk-font-family: ${f} !important;
   --sdk-comment-font-family: ${f} !important;
+}
+html, body,
+[data-radix-popper-content-wrapper],
+[data-radix-popper-content-wrapper] :is(div, span, p, button, a, label),
+[role="tooltip"],
+[role="tooltip"] :is(div, span, p),
+[role="menu"],
+[role="menu"] :is(div, span, button) {
+  font-family: ${f} !important;
 }`);
     }
     if (currentFonts.main) {
       const mn = currentFonts.main;
-      rules.push(`:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]) {
+      rules.push(`:is([data-testid="agent-response"], [data-testid="planner-response-text"], [data-markdown-root], [data-testid="tool-group-collapsible"], [data-testid="worked-for-collapsible"], [data-testid="ephemeral-tool-status"], [data-testid="progress-updates-collapsible"], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]) {
   --font-sans: ${mn} !important;
   --font-editor-sans: ${mn} !important;
   font-family: ${mn} !important;
@@ -151,7 +168,10 @@ pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #
   align-items: stretch !important;
 }
 div.mx-auto[style*="--max-conversation-width"],
-div.items-center > div[style*="--max-conversation-width"] {
+div.items-center > div[style*="--max-conversation-width"],
+.agy-home div.items-center:has(> div[style*="--max-conversation-width"]) > div {
+  width: 100% !important;
+  max-width: ${colW} !important;
   margin-left: ${clampedLeft} !important;
   margin-right: auto !important;
 }
@@ -197,12 +217,14 @@ div.items-center > div[style*="--max-conversation-width"] {
     folderStatus: effectiveModBool('claudeUxFolderStatus', true),
     recentSection: effectiveModBool('claudeUxRecentSection', false),
     projects: effectiveModBool('claudeUxProjects', true),
-    hideSidebarProjects: effectiveModBool('claudeUxHideSidebarProjects', true),
+    hideSidebarProjects: false,
     customizations: effectiveModBool('claudeUxCustomizations', true),
     codeFold: effectiveModBool('claudeUxCodeFold', true),
     overviewPanel: effectiveModBool('claudeUxOverviewPanel', true),
     glass: effectiveModBool('claudeUxGlass', true),
-    gridBg: effectiveModBool('claudeUxGridBg', true)
+    gridBg: effectiveModBool('claudeUxGridBg', true),
+    chatWorkSplit: effectiveModBool('claudeUxChatWorkSplit', true),
+    sidebarFooter: effectiveModBool('claudeUxSidebarFooter', true)
   };
   const L = (zh, en) => (FEAT.i18n ? zh : en);
 
@@ -227,6 +249,10 @@ div.items-center > div[style*="--max-conversation-width"] {
     else docRoot.removeAttribute('data-ag-glass');
     if (FEAT.gridBg) docRoot.setAttribute('data-ag-grid-bg', 'on');
     else docRoot.removeAttribute('data-ag-grid-bg');
+    if (FEAT.chatWorkSplit) docRoot.setAttribute('data-ag-cw-mode', currentCwMode);
+    else docRoot.removeAttribute('data-ag-cw-mode');
+    if (FEAT.sidebarFooter) docRoot.setAttribute('data-ag-sb-footer', 'on');
+    else docRoot.removeAttribute('data-ag-sb-footer');
   }
   applyCustomFontOverrides();
 
@@ -808,6 +834,10 @@ div.items-center > div[style*="--max-conversation-width"] {
       if (typeof closeQuotaPopover === 'function') closeQuotaPopover();
     }
     syncModelTriggerDisplay();
+    syncTitlebarAndBrandHeader();
+    syncConversationForkUi();
+    syncChatWorkSwitch();
+    syncSidebarFooterCard(false);
     syncSidebarEnhancements();
     syncProjectsWorkspace();
     syncOverviewPanel(false);
@@ -868,6 +898,9 @@ div.items-center > div[style*="--max-conversation-width"] {
   let cachedQuotaSvc = null;
   let cachedUserTierName = initialQuotaSnap ? String(initialQuotaSnap.tierName || '') : '';
   let cachedUserAccountKey = initialQuotaSnap ? String(initialQuotaSnap.accountKey || '') : '';
+  let cachedUserName = initialQuotaSnap ? String(initialQuotaSnap.userName || '') : '';
+  let cachedUserEmail = initialQuotaSnap ? String(initialQuotaSnap.userEmail || '') : '';
+  let cachedUserAvatar = initialQuotaSnap ? String(initialQuotaSnap.userAvatar || '') : '';
   let cachedQuotaGroups = initialQuotaSnap ? initialQuotaSnap.groups : null;
   let lastQuotaFetchTs = 0;
   let lastForceQuotaFetchTs = 0;
@@ -888,6 +921,9 @@ div.items-center > div[style*="--max-conversation-width"] {
           JSON.stringify({
             accountKey: cachedUserAccountKey || '',
             tierName: cachedUserTierName || '',
+            userName: cachedUserName || '',
+            userEmail: cachedUserEmail || '',
+            userAvatar: cachedUserAvatar || '',
             ts: Date.now(),
             groups: serializeQuotaGroups(cachedQuotaGroups)
           })
@@ -1763,7 +1799,7 @@ div.items-center > div[style*="--max-conversation-width"] {
 
   let lastQuotaSvcMissTs = 0;
   function discoverQuotaService(refreshAccount = false) {
-    if (!refreshAccount && cachedQuotaSvc && cachedUserTierName && cachedUserAccountKey) return cachedQuotaSvc;
+    if (!refreshAccount && cachedQuotaSvc && cachedUserTierName && cachedUserAccountKey && cachedUserAvatar) return cachedQuotaSvc;
     if (!refreshAccount && !cachedQuotaSvc && lastQuotaSvcMissTs && Date.now() - lastQuotaSvcMissTs < 5000) {
       return null;
     }
@@ -1775,6 +1811,8 @@ div.items-center > div[style*="--max-conversation-width"] {
     let foundTierName = '';
     let foundTierId = '';
     let foundEmail = '';
+    let foundUserName = '';
+    let foundAvatar = '';
 
     const walkObj = (obj, depth) => {
       if (!obj || typeof obj !== 'object' || depth > 4 || seen.has(obj)) return;
@@ -1787,6 +1825,24 @@ div.items-center > div[style*="--max-conversation-width"] {
           foundTierName = obj.userTier.name.trim();
           foundTierId = typeof obj.userTier.id === 'string' ? obj.userTier.id.trim() : '';
           foundEmail = typeof obj.email === 'string' ? obj.email : typeof obj.userEmail === 'string' ? obj.userEmail : '';
+          foundUserName =
+            typeof obj.name === 'string' && obj.name.trim()
+              ? obj.name.trim()
+              : typeof obj.displayName === 'string' && obj.displayName.trim()
+                ? obj.displayName.trim()
+                : '';
+          foundAvatar =
+            typeof obj.profilePictureUrl === 'string' && obj.profilePictureUrl.trim()
+              ? obj.profilePictureUrl.trim()
+              : typeof obj.profilePicture === 'string' && obj.profilePicture.trim()
+                ? obj.profilePicture.trim()
+                : typeof obj.photoUrl === 'string' && obj.photoUrl.trim()
+                  ? obj.photoUrl.trim()
+                  : typeof obj.avatarUrl === 'string' && obj.avatarUrl.trim()
+                    ? obj.avatarUrl.trim()
+                    : typeof obj.picture === 'string' && obj.picture.trim()
+                      ? obj.picture.trim()
+                      : '';
         }
       } catch {}
       let keys = [];
@@ -1856,6 +1912,9 @@ div.items-center > div[style*="--max-conversation-width"] {
       }
       cachedUserTierName = foundTierName;
       cachedUserAccountKey = nextAccountKey;
+      if (foundEmail) cachedUserEmail = foundEmail;
+      if (foundUserName) cachedUserName = foundUserName;
+      if (foundAvatar) cachedUserAvatar = foundAvatar;
     }
     return cachedQuotaSvc;
   }
@@ -7031,12 +7090,20 @@ div.items-center > div[style*="--max-conversation-width"] {
           'Adds a Claude-style Projects nav entry between Automations and Skills to manage local AGENTS.md, context files & scheduled tasks'
         ],
         [
-          'claudeUxHideSidebarProjects',
-          'hideSidebarProjects',
-          '侧栏统一「最近对话」',
-          'Unified Sidebar Recents',
-          '隐藏原生「项目」与「对话」分组，保留置顶对话并在下方用全量混排的「最近对话」统一展示全部项目与普通对话（关闭即恢复原生分组）',
-          'Replaces native Projects & standalone Conversations with a single Claude-style Recents list mixing all project and standalone chats'
+          'claudeUxChatWorkSplit',
+          'chatWorkSplit',
+          '侧栏 Chat / Work 模式切换',
+          'Sidebar Chat / Work Switch',
+          '在侧边栏顶部增加 Chat / Work 胶囊切换：Chat 专注无项目日常对话，Work 专注工程项目与工作区工具',
+          'Adds a Chat / Work segmented switch in the sidebar: Chat focuses on standalone chats, Work focuses on projects and workspace tools'
+        ],
+        [
+          'claudeUxSidebarFooter',
+          'sidebarFooter',
+          '左下角账号与双行额度底栏',
+          'Sidebar Profile & Quota Footer',
+          '在左下角固定展示头像、用户名、设置齿轮及 Gemini / Claude 5h 已用进度条，点击弹出完整 20 段配额浮层',
+          'Pins a compact profile + dual 5h quota progress footer at the bottom-left with a click-to-open full quota popover'
         ],
         [
           'claudeUxCustomizations',
@@ -7286,8 +7353,6 @@ div.items-center > div[style*="--max-conversation-width"] {
     } else if (featKey === 'projects') {
       if (!on) teardownProjectsWorkspace();
       else syncProjectsWorkspace();
-    } else if (featKey === 'hideSidebarProjects') {
-      syncSidebarHideNativeProjects();
     } else if (featKey === 'customizations') {
       if (!on) teardownCustomizationsEnhancement();
       else syncCustomizationsEnhancement();
@@ -7326,6 +7391,20 @@ div.items-center > div[style*="--max-conversation-width"] {
       if (docRoot) {
         if (on) docRoot.setAttribute('data-ag-grid-bg', 'on');
         else docRoot.removeAttribute('data-ag-grid-bg');
+      }
+    } else if (featKey === 'chatWorkSplit') {
+      if (on) {
+        if (docRoot) docRoot.setAttribute('data-ag-cw-mode', currentCwMode);
+        syncChatWorkSwitch();
+      } else {
+        teardownChatWorkSwitch();
+      }
+    } else if (featKey === 'sidebarFooter') {
+      if (on) {
+        if (docRoot) docRoot.setAttribute('data-ag-sb-footer', 'on');
+        syncSidebarFooterCard(true);
+      } else {
+        teardownSidebarFooterCard();
       }
     }
     syncSidebarEnhancements();
@@ -12036,6 +12115,938 @@ div.items-center > div[style*="--max-conversation-width"] {
     syncSidebarHideNativeProjects();
   }
 
+  function setChatWorkMode(nextMode) {
+    if (nextMode !== 'chat' && nextMode !== 'work') return;
+    currentCwMode = nextMode;
+    try {
+      if (typeof localStorage === 'object' && localStorage) {
+        localStorage.setItem(CW_MODE_STORAGE_KEY, nextMode);
+      }
+    } catch {}
+    if (docRoot && FEAT.chatWorkSplit) {
+      docRoot.setAttribute('data-ag-cw-mode', nextMode);
+    }
+    const sw = document.getElementById('ag-cw-switch');
+    if (sw) {
+      sw.setAttribute('data-ag-cw-mode', nextMode);
+      sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
+        btn.setAttribute('aria-selected', String(btn.getAttribute('data-ag-cw-tab') === nextMode));
+      });
+    }
+    syncChatWorkSidebarRows();
+  }
+
+  const CW_CHAT_SEC_RE = /^(对话|conversations|chats)$/i;
+  const CW_BOTH_SEC_RE = /^(pinned|置顶对话|coordinators|协调器|编排器)$/i;
+  let cwListObserver = null;
+  let cwListObservedTarget = null;
+
+  function syncChatWorkSidebarRows() {
+    const scrollBox = document.querySelector('[data-testid="conversation-list-sidebar"]');
+    const list = scrollBox && scrollBox.firstElementChild;
+    if (!list) return;
+    if (!FEAT.chatWorkSplit) {
+      if (cwListObserver) {
+        try { cwListObserver.disconnect(); } catch {}
+        cwListObserver = null;
+        cwListObservedTarget = null;
+      }
+      list.removeAttribute('data-ag-cw-active');
+      for (const child of list.children) child.removeAttribute('data-ag-cw-kind');
+      return;
+    }
+    if (typeof MutationObserver !== 'undefined' && cwListObservedTarget !== list) {
+      if (cwListObserver) {
+        try { cwListObserver.disconnect(); } catch {}
+      }
+      cwListObservedTarget = list;
+      cwListObserver = new MutationObserver(() => {
+        if (!disposed && FEAT.chatWorkSplit) frame(syncChatWorkSidebarRows);
+      });
+      cwListObserver.observe(list, {
+        childList: true,
+        subtree: false,
+        attributes: true,
+        attributeFilter: ['data-index']
+      });
+    }
+    const indexed = [];
+    for (const child of list.children) {
+      const rawIdx = child.getAttribute('data-index');
+      if (rawIdx === null || rawIdx === '') continue;
+      const idx = Number(rawIdx);
+      if (Number.isFinite(idx)) indexed.push({ idx, el: child });
+    }
+    if (!indexed.length) return;
+    indexed.sort((a, b) => a.idx - b.idx);
+
+    let curBucket = 'work';
+    for (const { el } of indexed) {
+      const sh = el.querySelector('[data-testid="section-header"]');
+      const hasAddProj = Boolean(el.querySelector('[data-testid="sidebar-add-project-button"]'));
+      if (hasAddProj) {
+        curBucket = 'work';
+        el.setAttribute('data-ag-cw-kind', 'work');
+        continue;
+      }
+      if (sh) {
+        const title = String(sh.getAttribute('data-title') || sh.textContent || '').trim();
+        if (CW_BOTH_SEC_RE.test(title) || sh.querySelector('[data-testid="pinned-section-header"], [data-testid="coordinator-section-header"]')) {
+          curBucket = 'both';
+          el.setAttribute('data-ag-cw-kind', 'both');
+        } else if (CW_CHAT_SEC_RE.test(title)) {
+          curBucket = 'chat';
+          el.setAttribute('data-ag-cw-kind', 'chat');
+        } else {
+          curBucket = 'work';
+          el.setAttribute('data-ag-cw-kind', 'work');
+        }
+        continue;
+      }
+      const isFolder = Boolean(
+        el.querySelector('[data-testid^="project-"], [data-testid="folder-toggle"], svg[class*="lucide-folder"]')
+      );
+      if (isFolder) {
+        curBucket = 'work';
+        el.setAttribute('data-ag-cw-kind', 'work');
+        continue;
+      }
+      el.setAttribute('data-ag-cw-kind', curBucket);
+    }
+    list.setAttribute('data-ag-cw-active', '1');
+  }
+
+  function syncChatWorkSwitch() {
+    if (disposed || !FEAT.chatWorkSplit) {
+      teardownChatWorkSwitch();
+      return;
+    }
+    if (docRoot && docRoot.getAttribute('data-ag-cw-mode') !== currentCwMode) {
+      docRoot.setAttribute('data-ag-cw-mode', currentCwMode);
+    }
+    const navItems = document.querySelector('[data-testid="sidebar-navigation-items"]');
+    const navWrap = navItems && navItems.parentElement;
+    const sb = navWrap && navWrap.parentElement;
+    if (sb && navWrap) {
+      let sw = document.getElementById('ag-cw-switch');
+      if (!sw) {
+        sw = document.createElement('div');
+        sw.id = 'ag-cw-switch';
+        sw.setAttribute('data-ag-i18n-ignore', '1');
+        sw.innerHTML =
+          '<div class="ag-cw-track" role="tablist" aria-label="Chat / Work">' +
+          '<span class="ag-cw-thumb" aria-hidden="true"></span>' +
+          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="chat" role="tab">Chat</button>' +
+          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="work" role="tab">Work</button>' +
+          '</div>';
+        sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            setChatWorkMode(btn.getAttribute('data-ag-cw-tab'));
+          });
+        });
+      }
+      if (sw.parentElement !== sb || sw.nextElementSibling !== navWrap) {
+        sb.insertBefore(sw, navWrap);
+      }
+      sw.setAttribute('data-ag-cw-mode', currentCwMode);
+      sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
+        btn.setAttribute('aria-selected', String(btn.getAttribute('data-ag-cw-tab') === currentCwMode));
+      });
+    }
+    syncChatWorkSidebarRows();
+  }
+
+  function teardownChatWorkSwitch() {
+    if (cwListObserver) {
+      try { cwListObserver.disconnect(); } catch {}
+      cwListObserver = null;
+      cwListObservedTarget = null;
+    }
+    const sw = document.getElementById('ag-cw-switch');
+    if (sw) sw.remove();
+    if (docRoot) docRoot.removeAttribute('data-ag-cw-mode');
+    const scrollBox = document.querySelector('[data-testid="conversation-list-sidebar"]');
+    const list = scrollBox && scrollBox.firstElementChild;
+    if (list) {
+      list.removeAttribute('data-ag-cw-active');
+      for (const child of list.children) child.removeAttribute('data-ag-cw-kind');
+    }
+  }
+
+  /* ==========================================================================
+   * 14b. Top Titlebar Nav Proxy (Sidebar Toggle / Back / Forward) + Colored Brand Row
+   * ========================================================================== */
+  const SVG_TB_SIDEBAR =
+    '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.8"/><path d="M7.5 4v12"/></svg>';
+  const SVG_TB_BACK =
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>';
+  const SVG_TB_FWD =
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
+
+  function findNativeNavButtons() {
+    const toggle = document.querySelector('button[data-testid="sidebar-toggle"]');
+    const back = document.querySelector('button[aria-label="后退"], button[aria-label="Back"]');
+    const fwd = document.querySelector('button[aria-label="前进"], button[aria-label="Forward"]');
+    return { toggle, back, fwd };
+  }
+
+  function applyColoredBrandLogo(logoBtn) {
+    if (!logoBtn) return;
+    const svg = logoBtn.querySelector('svg');
+    if (svg) {
+      if (!svg.querySelector('#ag-brand-logo-grad')) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const defs = document.createElementNS(ns, 'defs');
+        const grad = document.createElementNS(ns, 'radialGradient');
+        grad.setAttribute('id', 'ag-brand-logo-grad');
+        grad.setAttribute('cx', '50%');
+        grad.setAttribute('cy', '20%');
+        grad.setAttribute('r', '76%');
+        grad.setAttribute('fx', '50%');
+        grad.setAttribute('fy', '18%');
+        const stops = [
+          ['0%', '#EA4335'],
+          ['24%', '#FBBC05'],
+          ['52%', '#34A853'],
+          ['80%', '#4285F4'],
+          ['100%', '#3B82F6']
+        ];
+        for (const [offset, color] of stops) {
+          const st = document.createElementNS(ns, 'stop');
+          st.setAttribute('offset', offset);
+          st.setAttribute('stop-color', color);
+          grad.appendChild(st);
+        }
+        defs.appendChild(grad);
+        svg.insertBefore(defs, svg.firstChild);
+      }
+      const path = svg.querySelector('path');
+      if (path && path.getAttribute('fill') !== 'url(#ag-brand-logo-grad)') {
+        path.setAttribute('fill', 'url(#ag-brand-logo-grad)');
+      }
+    }
+    if (!logoBtn.querySelector('.ag-sb-brand-name')) {
+      const span = document.createElement('span');
+      span.className = 'ag-sb-brand-name';
+      span.setAttribute('data-ag-i18n-ignore', '1');
+      span.textContent = 'Antigravity';
+      logoBtn.appendChild(span);
+    }
+  }
+
+  function syncTitlebarAndBrandHeader() {
+    if (disposed) return;
+    const menuItem = document.querySelector('[data-testid="title-menu-bar-item"]');
+    const menuWrap = menuItem && menuItem.parentElement && menuItem.parentElement.parentElement;
+    const { toggle, back, fwd } = findNativeNavButtons();
+
+    if (menuWrap) {
+      let grp = document.getElementById('ag-tb-nav-group');
+      if (!grp) {
+        grp = document.createElement('div');
+        grp.id = 'ag-tb-nav-group';
+        grp.setAttribute('data-ag-i18n-ignore', '1');
+        grp.innerHTML =
+          `<button type="button" id="ag-tb-btn-sidebar" class="ag-tb-nav-btn" title="${L('切换侧边栏', 'Toggle Sidebar')}" aria-label="${L('切换侧边栏', 'Toggle Sidebar')}">${SVG_TB_SIDEBAR}</button>` +
+          `<button type="button" id="ag-tb-btn-back" class="ag-tb-nav-btn" title="${L('后退', 'Back')}" aria-label="${L('后退', 'Back')}">${SVG_TB_BACK}</button>` +
+          `<button type="button" id="ag-tb-btn-fwd" class="ag-tb-nav-btn" title="${L('前进', 'Forward')}" aria-label="${L('前进', 'Forward')}">${SVG_TB_FWD}</button>`;
+        grp.querySelector('#ag-tb-btn-sidebar').addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = document.querySelector('button[data-testid="sidebar-toggle"]');
+          if (btn) btn.click();
+        });
+        grp.querySelector('#ag-tb-btn-back').addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = document.querySelector('button[aria-label="后退"], button[aria-label="Back"]');
+          if (btn && !btn.disabled) btn.click();
+        });
+        grp.querySelector('#ag-tb-btn-fwd').addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const btn = document.querySelector('button[aria-label="前进"], button[aria-label="Forward"]');
+          if (btn && !btn.disabled) btn.click();
+        });
+      }
+      if (grp.parentElement !== menuWrap || menuWrap.firstElementChild !== grp) {
+        menuWrap.insertBefore(grp, menuWrap.firstElementChild);
+      }
+      const bBack = grp.querySelector('#ag-tb-btn-back');
+      const bFwd = grp.querySelector('#ag-tb-btn-fwd');
+      if (bBack) bBack.disabled = !back || Boolean(back.disabled || back.getAttribute('aria-disabled') === 'true');
+      if (bFwd) bFwd.disabled = !fwd || Boolean(fwd.disabled || fwd.getAttribute('aria-disabled') === 'true');
+    }
+
+    const logoBtn = document.querySelector('button[data-testid="app-icon-new-conversation-button"]');
+    const brandRow = logoBtn && logoBtn.parentElement;
+    if (logoBtn && brandRow) {
+      if (brandRow.getAttribute('data-ag-sb-brand-row') !== '1') {
+        brandRow.setAttribute('data-ag-sb-brand-row', '1');
+      }
+      const brandHost = brandRow.parentElement;
+      const sbEl =
+        document.querySelector('[data-testid="conversation-list-sidebar"]')?.closest('.bg-sidebar') ||
+        document.querySelector('aside.bg-sidebar, div.bg-sidebar');
+      if (brandHost) {
+        const sbW = sbEl ? Math.round(sbEl.getBoundingClientRect().width) : 0;
+        const nextW = sbW >= 160 && sbW <= 600 ? `${sbW}px` : '';
+        if (brandHost.style.width !== nextW) brandHost.style.width = nextW;
+      }
+      applyColoredBrandLogo(logoBtn);
+      if (document.getElementById('ag-tb-nav-group')) {
+        for (const nb of [toggle, back, fwd]) {
+          if (nb && brandRow.contains(nb) && nb.getAttribute('data-ag-tb-proxied') !== '1') {
+            nb.setAttribute('data-ag-tb-proxied', '1');
+          }
+        }
+      }
+    }
+  }
+
+  function teardownTitlebarAndBrandHeader() {
+    const grp = document.getElementById('ag-tb-nav-group');
+    if (grp) grp.remove();
+    document.querySelectorAll('[data-ag-tb-proxied="1"]').forEach((el) => el.removeAttribute('data-ag-tb-proxied'));
+    document.querySelectorAll('[data-ag-sb-brand-row="1"]').forEach((el) => {
+      if (el.parentElement) el.parentElement.style.width = '';
+      el.removeAttribute('data-ag-sb-brand-row');
+    });
+    document.querySelectorAll('.ag-sb-brand-name').forEach((el) => el.remove());
+    const logoBtn = document.querySelector('button[data-testid="app-icon-new-conversation-button"]');
+    if (logoBtn) {
+      const grad = logoBtn.querySelector('#ag-brand-logo-grad');
+      if (grad && grad.parentElement) grad.parentElement.remove();
+      const path = logoBtn.querySelector('svg path');
+      if (path) path.setAttribute('fill', 'currentColor');
+    }
+  }
+
+  /* ==========================================================================
+   * 14c. Native Conversation Forking (Sidebar Menu + Per-Turn Action Bar)
+   * ========================================================================== */
+  const SVG_FORK_BRANCH =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v2a2 2 0 0 1-2 2H8a2 2 0 0 0-2 2v0"/><path d="M6 9v9"/></svg>';
+  const SVG_FORK_WORKSPACE =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>';
+  const SVG_FORK_CHEVRON =
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
+
+  let forkInFlight = false;
+  let lastForkSidebarCid = '';
+  let forkTurnPopoverEl = null;
+
+  function extractCascadeIdFromRow(row) {
+    if (!row) return '';
+    const link = row.querySelector('a[href^="/c/"]');
+    const href = link && link.getAttribute('href');
+    const m = href && href.match(/\/c\/([0-9a-f-]{36})/i);
+    if (m) return m[1];
+    const attrCid = row.getAttribute('data-cascade-id');
+    return attrCid || '';
+  }
+
+  function extractCurrentUrlCascadeId() {
+    const m = (window.location.pathname || '').match(/\/(?:c|forked\/[^/]+)\/([0-9a-f-]{36})/i);
+    return m ? m[1] : '';
+  }
+
+  function resolveForkActionsClient() {
+    if (cachedSidebarActionsCtx && typeof cachedSidebarActionsCtx.forkConversation === 'function') {
+      return cachedSidebarActionsCtx;
+    }
+    const bindings = discoverSidebarBindings();
+    if (bindings && bindings.actionsCtx && typeof bindings.actionsCtx.forkConversation === 'function') {
+      return bindings.actionsCtx;
+    }
+    const root = document.getElementById('root') || document.body;
+    const fk = Object.keys(root).find((k) => k.startsWith('__reactContainer') || k.startsWith('__reactFiber'));
+    if (!fk) return null;
+    const seen = new Set();
+    const q = [root[fk]];
+    let steps = 0;
+    while (q.length && steps < 4500) {
+      steps++;
+      const f = q.shift();
+      if (!f || seen.has(f)) continue;
+      seen.add(f);
+      for (let dep = f.dependencies && f.dependencies.firstContext; dep; dep = dep.next) {
+        const mv = dep.memoizedValue;
+        if (mv && typeof mv.forkConversation === 'function') {
+          cachedSidebarActionsCtx = mv;
+          return mv;
+        }
+      }
+      if (f.child) q.push(f.child);
+      if (f.sibling) q.push(f.sibling);
+    }
+    return null;
+  }
+
+  async function runNativeConversationFork(sourceCascadeId, forkAtStepIndex, targetForkWorkspace = 1) {
+    if (forkInFlight || !sourceCascadeId) return;
+    const client = resolveForkActionsClient();
+    if (!client || typeof client.forkConversation !== 'function') {
+      showProjectsFloatingNotice(L('未找到原生分支服务，请刷新页面后重试', 'Fork service unavailable; please reload.'));
+      return;
+    }
+    forkInFlight = true;
+    const target = targetForkWorkspace === 2 ? 2 : 1;
+    showProjectsFloatingNotice(
+      target === 2
+        ? L('正在创建新 Worktree 并分支对话…', 'Creating new worktree & forking conversation…')
+        : L('正在创建聊天分支…', 'Creating forked conversation…')
+    );
+    try {
+      const req = {
+        sourceCascadeId,
+        targetForkWorkspace: target
+      };
+      if (typeof forkAtStepIndex === 'number' && forkAtStepIndex >= 0) {
+        req.forkAtStepIndex = forkAtStepIndex;
+      }
+      const res = await client.forkConversation(req);
+      const newCid = res && res.newCascadeId;
+      if (!newCid) {
+        throw new Error(L('服务端未返回新对话 ID', 'Server returned no forked conversation ID'));
+      }
+      const bindings = discoverSidebarBindings();
+      navigateSidebarConversation(newCid, bindings);
+      showProjectsFloatingNotice(
+        target === 2
+          ? L('✓ 已在新 Worktree 中创建聊天分支', '✓ Forked into new worktree')
+          : L('✓ 已创建并切换到聊天分支', '✓ Forked conversation ready')
+      );
+    } catch (err) {
+      const rawMsg = String((err && (err.message || err)) || '');
+      const hint =
+        target === 2 && /git|worktree|workspace|vcs|repo|unsupported/i.test(rawMsg)
+          ? L('当前对话未绑定 Git 仓库，请改用「当前工作区」分支', 'Not a Git workspace; use Current Workspace fork instead.')
+          : rawMsg.slice(0, 120) || L('未知错误', 'Unknown error');
+      showProjectsFloatingNotice(L('创建分支失败：', 'Fork failed: ') + hint);
+    } finally {
+      forkInFlight = false;
+    }
+  }
+
+  function closeForkTurnPopover() {
+    if (forkTurnPopoverEl && forkTurnPopoverEl.parentNode) {
+      forkTurnPopoverEl.remove();
+    }
+    forkTurnPopoverEl = null;
+  }
+
+  function openForkTurnPopover(anchorBtn, sourceCid, stepIndex) {
+    closeForkTurnPopover();
+    const pop = document.createElement('div');
+    pop.id = 'ag-fork-turn-popover';
+    pop.setAttribute('data-ag-i18n-ignore', '1');
+    pop.innerHTML =
+      `<button type="button" class="ag-fork-pop-item" data-fork-target="1">${SVG_FORK_WORKSPACE}<span>${L('分支到新聊天', 'Fork to new chat')}</span></button>` +
+      `<button type="button" class="ag-fork-pop-item" data-fork-target="2">${SVG_FORK_BRANCH}<span>${L('在新工作树中分支', 'Fork in new worktree')}</span></button>`;
+    pop.addEventListener('click', (e) => {
+      const item = e.target && e.target.closest && e.target.closest('[data-fork-target]');
+      if (!item) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const target = Number(item.getAttribute('data-fork-target')) === 2 ? 2 : 1;
+      closeForkTurnPopover();
+      runNativeConversationFork(sourceCid, stepIndex, target);
+    });
+    document.body.appendChild(pop);
+    forkTurnPopoverEl = pop;
+    const ar = anchorBtn.getBoundingClientRect();
+    const pr = pop.getBoundingClientRect();
+    let left = Math.min(window.innerWidth - pr.width - 12, Math.max(12, ar.left));
+    let top = ar.bottom + 6;
+    if (top + pr.height > window.innerHeight - 12) {
+      top = Math.max(12, ar.top - pr.height - 6);
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  const onForkTrackSidebarPointer = (e) => {
+    const row = e.target && e.target.closest && e.target.closest('[data-testid="conversation-row-sidebar"]');
+    if (row) {
+      const cid = extractCascadeIdFromRow(row);
+      if (cid) lastForkSidebarCid = cid;
+    }
+    if (forkTurnPopoverEl && e.target && !forkTurnPopoverEl.contains(e.target) && !(e.target.closest && e.target.closest('.ag-fork-turn-btn'))) {
+      closeForkTurnPopover();
+    }
+  };
+
+  const onForkKeydown = (e) => {
+    if (e.key === 'Escape' && forkTurnPopoverEl) {
+      closeForkTurnPopover();
+    }
+  };
+
+  document.addEventListener('pointerdown', onForkTrackSidebarPointer, true);
+  document.addEventListener('contextmenu', onForkTrackSidebarPointer, true);
+  document.addEventListener('keydown', onForkKeydown, true);
+
+  function resolveTurnForkMeta(barEl) {
+    const fk = Object.keys(barEl).find((k) => k.startsWith('__reactFiber'));
+    let f = fk ? barEl[fk] : null;
+    for (let i = 0; i < 16 && f; i++, f = f.return) {
+      const p = f.memoizedProps;
+      if (p && Array.isArray(p.steps) && p.steps.length > 0) {
+        const lastStep = p.steps[p.steps.length - 1];
+        const stepIdx = lastStep && lastStep.metadata && lastStep.metadata.sourceTrajectoryStepInfo
+          ? lastStep.metadata.sourceTrajectoryStepInfo.stepIndex
+          : -1;
+        if (typeof stepIdx === 'number' && stepIdx >= 0) {
+          return { stepIndex: stepIdx };
+        }
+      }
+    }
+    return null;
+  }
+
+  function injectForkIntoNativeSidebarMenu() {
+    if (!lastForkSidebarCid) return;
+    const menus = document.querySelectorAll('[role="menu"]');
+    for (const menu of menus) {
+      if (menu.querySelector('.ag-fork-menu-item')) continue;
+      const txt = menu.textContent || '';
+      if (!/(重命名|Rename|置顶|Pin|归档|Archive|删除|Delete)/.test(txt)) continue;
+      if (menu.closest('#ag-recent-row-menu, #ag-project-action-menu, #ag-fork-turn-popover')) continue;
+      const cid = lastForkSidebarCid;
+      const item = document.createElement('div');
+      item.className = 'ag-fork-menu-item';
+      item.setAttribute('role', 'menuitem');
+      item.setAttribute('data-ag-i18n-ignore', '1');
+      item.innerHTML =
+        `<span class="ag-fork-menu-item-left">${SVG_FORK_BRANCH}<span>${L('创建聊天分支', 'Fork conversation')}</span></span>` +
+        `<span style="opacity:0.65;display:inline-flex">${SVG_FORK_CHEVRON}</span>` +
+        `<div class="ag-fork-submenu" data-ag-i18n-ignore="1">` +
+          `<button type="button" class="ag-fork-pop-item" data-fork-target="1">${SVG_FORK_WORKSPACE}<span>${L('创建聊天分支', 'Fork in current workspace')}</span></button>` +
+          `<button type="button" class="ag-fork-pop-item" data-fork-target="2">${SVG_FORK_BRANCH}<span>${L('在新工作树中创建聊天分支', 'Fork in new worktree')}</span></button>` +
+        `</div>`;
+      item.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('[data-fork-target]');
+        if (!btn) {
+          e.preventDefault();
+          e.stopPropagation();
+          item.setAttribute('data-open', item.getAttribute('data-open') === '1' ? '0' : '1');
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const target = Number(btn.getAttribute('data-fork-target')) === 2 ? 2 : 1;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        runNativeConversationFork(cid, undefined, target);
+      });
+      const delItem = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((el) => /删除|Delete/.test(el.textContent || ''));
+      if (delItem && delItem.parentElement === menu) {
+        menu.insertBefore(item, delItem);
+      } else {
+        menu.appendChild(item);
+      }
+    }
+  }
+
+  function injectForkIntoTurnActionBars() {
+    const activeCid = extractCurrentUrlCascadeId();
+    if (!activeCid) return;
+    const copyBtns = document.querySelectorAll('button[aria-label="复制"], button[aria-label="Copy"]');
+    for (const copyBtn of copyBtns) {
+      const bar = copyBtn.parentElement;
+      if (!bar || bar.querySelector('.ag-fork-turn-btn')) continue;
+      if (!bar.className || !String(bar.className).includes('shrink-0')) continue;
+      const meta = resolveTurnForkMeta(bar);
+      if (!meta) continue;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ag-fork-turn-btn';
+      btn.setAttribute('data-ag-i18n-ignore', '1');
+      btn.setAttribute('title', L('分支到新聊天', 'Fork to new chat'));
+      btn.setAttribute('aria-label', L('分支到新聊天', 'Fork to new chat'));
+      btn.innerHTML = SVG_FORK_BRANCH;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const cidNow = extractCurrentUrlCascadeId() || activeCid;
+        const freshMeta = resolveTurnForkMeta(bar) || meta;
+        openForkTurnPopover(btn, cidNow, freshMeta.stepIndex);
+      });
+      bar.appendChild(btn);
+    }
+  }
+
+  function syncConversationForkUi() {
+    if (disposed) return;
+    injectForkIntoNativeSidebarMenu();
+    injectForkIntoTurnActionBars();
+  }
+
+  function teardownConversationForkUi() {
+    closeForkTurnPopover();
+    document.removeEventListener('pointerdown', onForkTrackSidebarPointer, true);
+    document.removeEventListener('contextmenu', onForkTrackSidebarPointer, true);
+    document.removeEventListener('keydown', onForkKeydown, true);
+    document.querySelectorAll('.ag-fork-turn-btn, .ag-fork-menu-item').forEach((el) => el.remove());
+  }
+
+  /* ==========================================================================
+   * 15. Bottom-Left Fixed Sidebar Profile + Dual 5h Quota Bar & Popover (`claudeUxSidebarFooter`)
+   * ========================================================================== */
+  let sbQuotaPopoverOpen = false;
+  let sbFooterLastSig = '';
+  let sbFooterWarmupDone = false;
+
+  function resolveSidebarUserProfile() {
+    discoverQuotaService();
+    let name = cachedUserName || '';
+    const email = cachedUserEmail || (cachedUserAccountKey ? cachedUserAccountKey.split('|')[0] : '') || '';
+    if (!name && email) {
+      name = email.split('@')[0];
+    }
+    if (!name) {
+      const greet = document.querySelector('.agy-home h1, .agy-home h2');
+      const m = greet && greet.textContent && greet.textContent.match(/(?:Welcome back|Hello there|Hi),?\s+([^.!?,\n]+)/i);
+      if (m && m[1]) {
+        name = m[1].trim();
+        cachedUserName = name;
+      }
+    }
+    if (!name) name = 'Antigravity';
+    const initial = (name.trim()[0] || 'A').toUpperCase();
+    return {
+      name,
+      email,
+      avatar: cachedUserAvatar || '',
+      tier: cachedUserTierName || '',
+      initial
+    };
+  }
+
+  function extractDual5hQuotaRows() {
+    const groups = Array.isArray(cachedQuotaGroups) ? cachedQuotaGroups : [];
+    const pickBestBucket = (grp) => {
+      if (!grp || !Array.isArray(grp.buckets) || !grp.buckets.length) return null;
+      const b =
+        grp.buckets.find((x) => String(x.window || '').toLowerCase() === '5h') ||
+        grp.buckets.find((x) => /week/i.test(String(x.window || ''))) ||
+        grp.buckets.find((x) => /day|daily/i.test(String(x.window || ''))) ||
+        grp.buckets[0];
+      if (!b) return null;
+      const rem =
+        b.remaining && b.remaining.case === 'remainingFraction' && typeof b.remaining.value === 'number'
+          ? b.remaining.value
+          : typeof b.remainingFraction === 'number'
+            ? b.remainingFraction
+            : null;
+      if (rem === null) return null;
+      const usedRaw = Math.max(0, Math.min(100, (1 - rem) * 100));
+      const rawWin = String(b.window || '').toLowerCase();
+      const winShort =
+        rawWin === '5h'
+          ? '5h'
+          : /week/i.test(rawWin)
+            ? L('每周', 'Weekly')
+            : /day|daily/i.test(rawWin)
+              ? L('每日', 'Daily')
+              : localizeQuotaWindowTag(b.window, b.displayName || '') || '';
+      return {
+        label: localizeGroupShortName(grp.displayName || ''),
+        winShort,
+        usedRaw,
+        usedStr: formatQuotaUsedPctStr(usedRaw),
+        color: ovQuotaUsedColor(usedRaw),
+        elapsedPct: computeWindowElapsedPct(b, usedRaw),
+        resetTxt: formatResetLabel(b, usedRaw)
+      };
+    };
+    const out = [];
+    for (const g of groups) {
+      const row = pickBestBucket(g);
+      if (row) out.push(row);
+      if (out.length >= 2) break;
+    }
+    return out;
+  }
+
+  function formatShortTierBadge(rawTier) {
+    const s = String(rawTier || '').trim();
+    if (!s) return '';
+    if (/\bultra\b/i.test(s)) return 'Ultra';
+    if (/\bpro\b/i.test(s)) return 'Pro';
+    if (/\benterprise\b/i.test(s)) return 'Enterprise';
+    if (/\bfree\b/i.test(s)) return 'Free';
+    return s.replace(/^google\s+ai\s+/i, '').trim() || s;
+  }
+
+  function renderSidebarQuotaPopover() {
+    let pop = document.getElementById('ag-sb-quota-popover');
+    if (!sbQuotaPopoverOpen || !FEAT.sidebarFooter || disposed) {
+      if (pop) pop.remove();
+      return;
+    }
+    if (!pop) {
+      pop = document.createElement('div');
+      pop.id = 'ag-sb-quota-popover';
+      pop.setAttribute('data-ag-i18n-ignore', '1');
+      document.body.appendChild(pop);
+    }
+    const card = document.getElementById('ag-sb-footer-card');
+    const sb = document.querySelector('[role="navigation"]');
+    const anchorRect = sb ? sb.getBoundingClientRect() : card ? card.getBoundingClientRect() : null;
+    if (anchorRect) {
+      pop.style.left = `${Math.round(anchorRect.right + 10)}px`;
+      pop.style.bottom = '12px';
+    }
+    const profile = resolveSidebarUserProfile();
+    const groups = Array.isArray(cachedQuotaGroups) ? cachedQuotaGroups : [];
+    const sortBuckets = (list) =>
+      (list || []).slice().sort((a, b) => {
+        const r = (w) => (w === '5h' ? 0 : w === 'daily' ? 1 : 2);
+        return r(String(a.window || '').toLowerCase()) - r(String(b.window || '').toLowerCase());
+      });
+
+    let bodyHtml = '';
+    if (!groups.length) {
+      bodyHtml = `<div class="ag-sb-pop-empty">${escapeHtml(
+        quotaFetchInFlight ? L('正在读取实时套餐限额…', 'Loading plan quotas…') : L('暂无额度数据，点击右上角刷新', 'No quota data yet. Click refresh.')
+      )}</div>`;
+    } else {
+      const cards = [];
+      for (const g of groups) {
+        const gShort = localizeGroupShortName(g.displayName || '');
+        for (const b of sortBuckets(g.buckets)) {
+          const rem =
+            b.remaining && b.remaining.case === 'remainingFraction' && typeof b.remaining.value === 'number'
+              ? b.remaining.value
+              : typeof b.remainingFraction === 'number'
+                ? b.remainingFraction
+                : 1;
+          const usedRaw = Math.max(0, Math.min(100, (1 - rem) * 100));
+          const usedPctStr = formatQuotaUsedPctStr(usedRaw);
+          const winTag = localizeQuotaWindowTag(b.window, b.displayName || '');
+          const col = ovQuotaUsedColor(usedRaw);
+          const litCount = usedRaw <= 0 ? 0 : Math.min(20, Math.max(1, Math.round(usedRaw / 5)));
+          const segsHtml = Array.from({ length: 20 }, (_, i) =>
+            `<span class="ag-sb-seg" style="background:${i < litCount ? col : 'var(--ag-sb-track)'}"></span>`
+          ).join('');
+          const elapsedPct = computeWindowElapsedPct(b, usedRaw);
+          const cursorHtml =
+            elapsedPct !== null
+              ? `<div class="ag-sb-time-track"><div class="ag-sb-time-fill" style="width:${elapsedPct}%"></div><span class="ag-sb-time-cursor" style="left:${elapsedPct}%"></span></div>`
+              : '';
+          const resetTxt = formatResetLabel(b, usedRaw);
+          cards.push(`<div class="ag-sb-qbox">
+            <div class="ag-sb-qrow">
+              <span class="ag-sb-qleft"><i class="ag-sb-qdot" style="background:${col}"></i><span>${escapeHtml(gShort)}${winTag ? ` · ${escapeHtml(winTag)}` : ''}</span></span>
+              <span class="ag-sb-qpct">${usedPctStr}% ${L('已用', 'used')}</span>
+            </div>
+            <div class="ag-sb-seg-bar">${segsHtml}</div>
+            ${cursorHtml}
+            ${resetTxt ? `<div class="ag-sb-reset">${escapeHtml(resetTxt)}</div>` : ''}
+          </div>`);
+        }
+      }
+      bodyHtml = cards.join('');
+    }
+
+    pop.innerHTML = `
+      <div class="ag-sb-pop-hdr">
+        <div class="ag-sb-pop-title">
+          <span>Antigravity</span>
+          ${profile.tier ? `<span class="ag-sb-tier-pill">${escapeHtml(profile.tier)}</span>` : ''}
+        </div>
+        <div class="ag-sb-pop-actions">
+          <button type="button" class="ag-sb-icon-btn" data-ag-sb-refresh title="${escapeHtml(L('刷新实时配额', 'Refresh quota'))}">
+            <svg class="${quotaFetchInFlight ? 'ag-ov-spinning' : ''}" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.2 8a5.2 5.2 0 1 1-1.4-3.55" stroke-linecap="round"/><path d="M13.4 2.5v2.6h-2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" class="ag-sb-icon-btn" data-ag-sb-close title="${escapeHtml(L('关闭', 'Close'))}">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ag-sb-pop-body">${bodyHtml}</div>
+    `;
+    const refBtn = pop.querySelector('[data-ag-sb-refresh]');
+    if (refBtn) {
+      refBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fetchQuotaSummary(true).then(() => {
+          if (!disposed) {
+            syncSidebarFooterCard(true);
+            renderSidebarQuotaPopover();
+          }
+        });
+        renderSidebarQuotaPopover();
+      });
+    }
+    const clsBtn = pop.querySelector('[data-ag-sb-close]');
+    if (clsBtn) {
+      clsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeSidebarQuotaPopover();
+      });
+    }
+  }
+
+  function closeSidebarQuotaPopover() {
+    sbQuotaPopoverOpen = false;
+    const pop = document.getElementById('ag-sb-quota-popover');
+    if (pop) pop.remove();
+  }
+
+  function onSbQuotaOutsideClick(e) {
+    if (!sbQuotaPopoverOpen) return;
+    if (e.target && e.target.closest && e.target.closest('#ag-sb-quota-popover, #ag-sb-footer-card')) return;
+    closeSidebarQuotaPopover();
+  }
+
+  function onSbQuotaKeydown(e) {
+    if (sbQuotaPopoverOpen && e.key === 'Escape') closeSidebarQuotaPopover();
+  }
+
+  document.addEventListener('mousedown', onSbQuotaOutsideClick, true);
+  document.addEventListener('keydown', onSbQuotaKeydown, true);
+
+  function syncSidebarFooterCard(force = false) {
+    if (disposed || !FEAT.sidebarFooter) {
+      teardownSidebarFooterCard();
+      return;
+    }
+    if (docRoot && docRoot.getAttribute('data-ag-sb-footer') !== 'on') {
+      docRoot.setAttribute('data-ag-sb-footer', 'on');
+    }
+    if (!sbFooterWarmupDone && (!cachedQuotaGroups || !cachedQuotaGroups.length)) {
+      sbFooterWarmupDone = true;
+      fetchQuotaSummary(false).then(() => {
+        if (!disposed && FEAT.sidebarFooter) syncSidebarFooterCard(true);
+      });
+    }
+    const sb = document.querySelector('[role="navigation"]');
+    const footer = sb && sb.lastElementChild;
+    if (!footer) return;
+    const profile = resolveSidebarUserProfile();
+    const rows = extractDual5hQuotaRows();
+    const sig = JSON.stringify({
+      n: profile.name,
+      e: profile.email,
+      a: profile.avatar,
+      t: profile.tier,
+      r: rows.map((x) => `${x.label}:${x.usedStr}`),
+      lang: FEAT.i18n
+    });
+    let card = document.getElementById('ag-sb-footer-card');
+    if (card && card.parentElement === footer && !force && sig === sbFooterLastSig) {
+      if (sbQuotaPopoverOpen) renderSidebarQuotaPopover();
+      return;
+    }
+    sbFooterLastSig = sig;
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'ag-sb-footer-card';
+      card.setAttribute('data-ag-i18n-ignore', '1');
+      footer.appendChild(card);
+    } else if (card.parentElement !== footer) {
+      footer.appendChild(card);
+    }
+
+    const avatarHtml = profile.avatar
+      ? `<img class="ag-sb-avatar-img" src="${escapeHtml(profile.avatar)}" alt="${escapeHtml(profile.name)}" /><span class="ag-sb-avatar-mono" style="display:none !important">${escapeHtml(profile.initial)}</span>`
+      : `<span class="ag-sb-avatar-mono">${escapeHtml(profile.initial)}</span>`;
+    const shortTier = formatShortTierBadge(profile.tier);
+    const subText = profile.email || '';
+    const barsHtml = rows.length
+      ? rows
+          .map((r) => {
+            const litCount = r.usedRaw <= 0 ? 0 : Math.min(16, Math.max(1, Math.round((r.usedRaw / 100) * 16)));
+            const segsHtml = Array.from({ length: 16 }, (_, i) =>
+              `<span class="ag-sb-mini-seg" style="background:${i < litCount ? r.color : 'var(--ag-sb-mini-track)'}"></span>`
+            ).join('');
+            const cursorHtml =
+              r.elapsedPct !== null
+                ? `<div class="ag-sb-mini-time"><div class="ag-sb-mini-time-fill" style="width:${r.elapsedPct}%"></div><span class="ag-sb-mini-time-cursor" style="left:${r.elapsedPct}%"></span></div>`
+                : '';
+            return `<div class="ag-sb-meter-item" title="${escapeHtml(`${r.label}${r.winShort ? ' · ' + r.winShort : ''} · ${r.usedStr}% ${L('已用', 'used')}${r.resetTxt ? ' · ' + r.resetTxt : ''}`)}">
+              <div class="ag-sb-meter-hdr">
+                <span class="ag-sb-meter-left"><i class="ag-sb-meter-dot" style="background:${r.color}"></i><span>${escapeHtml(r.label.replace(/\s*模型$/i, ''))}${r.winShort ? ` · ${escapeHtml(r.winShort)}` : ''}</span></span>
+                <span class="ag-sb-meter-pct">${r.usedStr}%</span>
+              </div>
+              <div class="ag-sb-mini-segbar">${segsHtml}</div>
+              ${cursorHtml}
+            </div>`;
+          })
+          .join('')
+      : `<div class="ag-sb-bar-empty">${escapeHtml(L('点击查看实时模型额度…', 'Click to load live quotas…'))}</div>`;
+
+    card.innerHTML = `
+      <div class="ag-sb-prof-row">
+        <div class="ag-sb-prof-left" data-ag-sb-open-quota title="${escapeHtml(L('点击查看详细配额', 'Click for full quota details'))}">
+          ${avatarHtml}
+          <div class="ag-sb-prof-meta">
+            <div class="ag-sb-prof-name-line">
+              <span class="ag-sb-prof-name">${escapeHtml(profile.name)}</span>
+              ${shortTier ? `<span class="ag-sb-plan-pill">${escapeHtml(shortTier)}</span>` : ''}
+            </div>
+            ${subText ? `<div class="ag-sb-prof-sub">${escapeHtml(subText)}</div>` : ''}
+          </div>
+        </div>
+        <button type="button" class="ag-sb-gear-btn" data-ag-sb-settings title="${escapeHtml(L('设置', 'Settings'))}" aria-label="${escapeHtml(L('设置', 'Settings'))}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+      <div class="ag-sb-bars-wrap" data-ag-sb-open-quota title="${escapeHtml(L('点击展开完整配额与每周重置详情', 'Click for full quota & weekly reset details'))}">
+        ${barsHtml}
+      </div>
+    `;
+    const avatarImg = card.querySelector('.ag-sb-avatar-img');
+    if (avatarImg) {
+      avatarImg.addEventListener('error', () => {
+        avatarImg.style.setProperty('display', 'none', 'important');
+        const fallback = avatarImg.nextElementSibling;
+        if (fallback && fallback.classList.contains('ag-sb-avatar-mono')) {
+          fallback.style.removeProperty('display');
+        }
+      });
+    }
+    const gearBtn = card.querySelector('[data-ag-sb-settings]');
+    if (gearBtn) {
+      gearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeSidebarQuotaPopover();
+        const nativeSettings = document.querySelector('[role="navigation"] [data-testid="settings-button"]');
+        if (nativeSettings) nativeSettings.click();
+      });
+    }
+    card.querySelectorAll('[data-ag-sb-open-quota]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sbQuotaPopoverOpen = !sbQuotaPopoverOpen;
+        if (sbQuotaPopoverOpen) {
+          renderSidebarQuotaPopover();
+          fetchQuotaSummary(false).then(() => {
+            if (!disposed && sbQuotaPopoverOpen) {
+              syncSidebarFooterCard(true);
+              renderSidebarQuotaPopover();
+            }
+          });
+        } else {
+          closeSidebarQuotaPopover();
+        }
+      });
+    });
+    if (sbQuotaPopoverOpen) renderSidebarQuotaPopover();
+  }
+
+  function teardownSidebarFooterCard() {
+    closeSidebarQuotaPopover();
+    document.removeEventListener('mousedown', onSbQuotaOutsideClick, true);
+    document.removeEventListener('keydown', onSbQuotaKeydown, true);
+    const card = document.getElementById('ag-sb-footer-card');
+    if (card) card.remove();
+    if (docRoot) docRoot.removeAttribute('data-ag-sb-footer');
+    sbFooterLastSig = '';
+  }
+
   function syncSidebarHideNativeProjects() {
     const scrollBox = document.querySelector('[data-testid="conversation-list-sidebar"]');
     if (scrollBox && !disposed) {
@@ -13437,10 +14448,36 @@ div.items-center > div[style*="--max-conversation-width"] {
     }
   }
 
+  function syncOverviewBgTaskCollapse(panel) {
+    const sc = panel && panel.querySelector('div.overflow-y-auto');
+    if (!sc) return;
+    for (const child of sc.children) {
+      if (child.id === 'ag-claude-ov-sections' || child.hasAttribute('data-ag-ov-shortcuts')) continue;
+      const inner = child.firstElementChild;
+      if (!inner || inner.children.length < 2) continue;
+      const hdr = inner.firstElementChild;
+      if (!hdr || !/后台任务|background\s+tasks/i.test(hdr.textContent || '')) continue;
+      if (!child.hasAttribute('data-ag-ov-bgtask')) {
+        child.setAttribute('data-ag-ov-bgtask', ovCollapseState.bgTasks ? 'open' : 'collapsed');
+      }
+      if (!hdr.hasAttribute('data-ag-ov-bgtask-bound')) {
+        hdr.setAttribute('data-ag-ov-bgtask-bound', '1');
+        hdr.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const nextOpen = child.getAttribute('data-ag-ov-bgtask') !== 'open';
+          ovCollapseState.bgTasks = nextOpen;
+          saveOvCollapseState();
+          child.setAttribute('data-ag-ov-bgtask', nextOpen ? 'open' : 'collapsed');
+        });
+      }
+    }
+  }
+
   function renderOverviewPanel(force = false) {
     if (disposed || !FEAT.overviewPanel) return;
     const sectionsEl = document.getElementById('ag-claude-ov-sections');
     if (!sectionsEl) return;
+    syncOverviewBgTaskCollapse(sectionsEl.closest('[data-testid="overview-panel"]'));
 
     const ws = resolveActiveOverviewWorkspace(force);
     const snap = ensureOverviewSnapshot(ws.dirPath, false);
@@ -14063,7 +15100,7 @@ div.items-center > div[style*="--max-conversation-width"] {
   }
 
   const OWN_SEL =
-    '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, .ag-claude-inline-editor, .ag-claude-folder-badges, #ag-claude-recent-section, #ag-recent-row-menu, #ag-project-action-menu, #ag-claude-ux-settings-nav, #ag-claude-ux-settings-panel, #ag-settings-stats-wrap, .ag-settings-subhdr-chev, #ag-claude-projects-nav-btn, #ag-claude-projects-view, #ag-claude-project-modal, .ag-code-fold-toggle, .ag-code-fold-bar, #ag-claude-ov-sections';
+    '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, .ag-claude-inline-editor, .ag-claude-folder-badges, #ag-claude-recent-section, #ag-recent-row-menu, #ag-project-action-menu, #ag-claude-ux-settings-nav, #ag-claude-ux-settings-panel, #ag-settings-stats-wrap, .ag-settings-subhdr-chev, #ag-claude-projects-nav-btn, #ag-claude-projects-view, #ag-claude-project-modal, .ag-code-fold-toggle, .ag-code-fold-bar, #ag-claude-ov-sections, #ag-cw-switch, #ag-sb-footer-card, #ag-sb-quota-popover, #ag-tb-nav-group, .ag-sb-brand-name, .ag-fork-turn-btn, #ag-fork-turn-popover, .ag-fork-menu-item, .ag-fork-submenu';
   const CLASS_WATCH_SEL =
     '[id="antigravity.agentSidePanelInputBox"], [data-testid="tool-group-collapsible"], [data-testid="worked-for-collapsible"], [data-testid="progress-updates-collapsible"], [data-testid="ephemeral-tool-status"]';
 
@@ -14314,7 +15351,13 @@ div.items-center > div[style*="--max-conversation-width"] {
       docRoot.removeAttribute('data-ag-cjk-scale');
       docRoot.removeAttribute('data-ag-glass');
       docRoot.removeAttribute('data-ag-grid-bg');
+      docRoot.removeAttribute('data-ag-cw-mode');
+      docRoot.removeAttribute('data-ag-sb-footer');
     }
+    teardownConversationForkUi();
+    teardownTitlebarAndBrandHeader();
+    teardownChatWorkSwitch();
+    teardownSidebarFooterCard();
     if (window.__agClaudeUxDispose === dispose) window.__agClaudeUxDispose = null;
   }
 
