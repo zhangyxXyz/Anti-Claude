@@ -7504,6 +7504,10 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="changed-file
 }
 
 /* Settings Dialog Polish: elevated frosted modal, softer dual-pane tonal balance & refined cards */
+.settings-modal-backdrop {
+  top: 30px !important;
+}
+
 [role="dialog"]:has([data-testid="settings-sidebar"]) {
   border-radius: 16px !important;
   overflow: hidden !important;
