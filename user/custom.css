@@ -8638,6 +8638,56 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-claude-ov-sections sec
   -webkit-backdrop-filter: blur(12px) saturate(125%) !important;
 }
 
+/* Unified cool-slate Markdown code block card (inner [data-ag-code-wrap], never outer <pre>) */
+[data-ag-code-wrap] {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-ag-code-wrap] {
+  background-color: rgba(24, 24, 27, 0.90) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-ag-code-wrap] {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(20, 20, 19, 0.09) !important;
+  box-shadow: 0 2px 8px rgba(15, 15, 14, 0.04) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-ag-code-wrap] > div:first-child {
+  background-color: rgba(255, 255, 255, 0.025) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-ag-code-wrap] > div:first-child {
+  background-color: rgba(20, 20, 19, 0.025) !important;
+  border-bottom-color: rgba(20, 20, 19, 0.07) !important;
+}
+
+[data-ag-code-wrap] > div:first-child {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+[data-ag-code-wrap] > div:first-child > span:first-child,
+[data-ag-code-wrap] > div:first-child > div:first-child {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-ag-code-wrap] > div:first-child > span:first-child,
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-ag-code-wrap] > div:first-child > div:first-child {
+  color: rgba(236, 236, 234, 0.68) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-ag-code-wrap] > div:first-child > span:first-child,
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-ag-code-wrap] > div:first-child > div:first-child {
+  color: rgba(20, 20, 19, 0.62) !important;
+}
+
 
 
 
