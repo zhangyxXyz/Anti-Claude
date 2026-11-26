@@ -114,6 +114,22 @@
   --sdk-comment-font-family: ${f} !important;
 }`);
     }
+    if (currentFonts.main) {
+      const mn = currentFonts.main;
+      rules.push(`:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]) {
+  --font-sans: ${mn} !important;
+  --font-editor-sans: ${mn} !important;
+  font-family: ${mn} !important;
+}`);
+    }
+    if (currentFonts.overview) {
+      const ov = currentFonts.overview;
+      rules.push(`[data-testid="overview-panel"] {
+  --font-sans: ${ov} !important;
+  --font-family: ${ov} !important;
+  font-family: ${ov} !important;
+}`);
+    }
     if (currentFonts.mono) {
       const m = currentFonts.mono;
       rules.push(`:root, html, body, body[data-agy-theme], body[data-agy-font], .pdf-sdk-root {
@@ -123,27 +139,8 @@
   --default-mono-font-family: ${m} !important;
   --sdk-font-family-mono: ${m} !important;
 }
-:is(pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #ag-live-metrics-text, .monaco-editor .view-lines, .cm-editor .cm-content, .cm-editor .cm-line),
-:is(pre, code, .font-mono, .monaco-editor .view-lines, .cm-editor .cm-content, .cm-editor .cm-line) :is(span, td, th, div, a) {
+pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #ag-live-metrics-text, .monaco-editor .view-lines, .cm-editor .cm-content, table.font-mono td, .font-mono table td {
   font-family: ${m} !important;
-}`);
-    }
-    if (currentFonts.main) {
-      const mn = currentFonts.main;
-      rules.push(`:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]),
-:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-input-step"], [data-testid="user-message-content"], .agy-user-bubble, [data-lexical-editor="true"]) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em, div, a):not(code):not(pre):not(.font-mono):not(pre *):not(code *):not(.font-mono *) {
-  --font-sans: ${mn} !important;
-  --font-editor-sans: ${mn} !important;
-  font-family: ${mn} !important;
-}`);
-    }
-    if (currentFonts.overview) {
-      const ov = currentFonts.overview;
-      rules.push(`[data-testid="overview-panel"],
-[data-testid="overview-panel"] :is(div, span, p, a, button, h1, h2, h3, h4, li, label):not(code):not(pre):not(.font-mono) {
-  --font-sans: ${ov} !important;
-  --font-family: ${ov} !important;
-  font-family: ${ov} !important;
 }`);
     }
     if (currentChatOffsetX !== 0) {
@@ -157,6 +154,15 @@ div.mx-auto[style*="--max-conversation-width"],
 div.items-center > div[style*="--max-conversation-width"] {
   margin-left: ${clampedLeft} !important;
   margin-right: auto !important;
+}
+/* Prevent native .md-table-bleed negative centering from overflowing left nav dots when chat is offset */
+.md-table-bleed .md-table-host[data-width-mode] {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-inline-start: 0 !important;
+  margin-inline-end: 0 !important;
+  transform: none !important;
 }`);
     }
     let styleEl = document.getElementById(CUSTOM_FONT_STYLE_ID);

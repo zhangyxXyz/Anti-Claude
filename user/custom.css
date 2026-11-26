@@ -153,8 +153,8 @@ body[data-agy-font] :where(.font-sans),
 }
 
 /* AI response prose & lists: unified sans-serif 14px / 1.65 with orphan prevention & strict CJK line-break rules */
-:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article):not(code):not(pre):not(.font-mono):not(.monaco-editor):not(.cm-editor),
-:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em):not(code):not(pre):not(.font-mono):not(pre *):not(code *):not(.font-mono *):not(.monaco-editor *):not(.cm-editor *) {
+:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article),
+:is([data-testid="planner-response-text"], [data-markdown-root], .select-text, .prose, .markdown, article) :is(p, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th, span, strong, b, em):not(code):not(pre):not(.font-mono) {
   font-family: var(--font-sans) !important;
   font-variant-numeric: normal;
   letter-spacing: 0 !important;
@@ -395,8 +395,8 @@ div[contenteditable="true"] :is(p, span, div, li),
   text-spacing-trim: normal !important;
 }
 
-/* Code blocks, inline code & Diff viewer: airy Cursor-like reading rhythm + MonoLisa stylistic sets (excludes virtualized .monaco-editor line-height) */
-:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text, .prose, .markdown, article) :is(code, pre, pre *, kbd, samp, .font-mono, [class*="language-"]) {
+/* Code blocks, inline code & Diff viewer: airy Cursor-like reading rhythm + MonoLisa stylistic sets (fast selectors, no :not(A *)) */
+:is([data-testid="planner-response-text"], [data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text, .prose, .markdown, article) :is(code, pre, kbd, samp, .font-mono, [class*="language-"]) {
   font-family: var(--font-mono) !important;
   font-size: 13px !important;
   font-variant-ligatures: contextual !important;
@@ -405,14 +405,19 @@ div[contenteditable="true"] :is(p, span, div, li),
   text-spacing-trim: space-all !important;
 }
 
-:is(pre, pre code, pre *, [class*="language-"], table.font-mono td, .font-mono table td, [data-testid*="diff" i] td, [data-testid*="diff" i] pre, [class*="diff" i] td):not(.monaco-editor):not(.monaco-editor *) {
+pre,
+pre code,
+table.font-mono td,
+.font-mono table td {
+  font-family: var(--font-mono) !important;
   font-size: 13.5px !important;
   line-height: 1.65 !important;
   font-variant-ligatures: contextual !important;
   font-feature-settings: "ss01" on, "ss04" on, "ss05" on, "ss06" on, "zero" on !important;
 }
 
-:is(table.font-mono td, .font-mono table td, [data-testid*="diff" i] td, [class*="diff" i] td):not(.monaco-editor *) {
+table.font-mono td,
+.font-mono table td {
   padding-top: 1.5px !important;
   padding-bottom: 1.5px !important;
 }
@@ -7389,9 +7394,7 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) :is([data-testid="user-mes
 }
 
 html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is([data-testid="user-message-bubble"], .agy-user-bubble) {
-  background-color: rgba(26, 58, 110, 0.84) !important;
-  backdrop-filter: blur(12px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+  background-color: rgba(26, 58, 110, 0.90) !important;
 }
 
 /* ==========================================================================
