@@ -12141,7 +12141,8 @@ div.items-center > div[style*="--max-conversation-width"],
   let cwListObserver = null;
   let cwListObservedTarget = null;
 
-  function syncChatWorkSidebarRows() {
+  let cwRowsDirty = true;
+  function syncChatWorkSidebarRows(force = false) {
     const scrollBox = document.querySelector('[data-testid="conversation-list-sidebar"]');
     const list = scrollBox && scrollBox.firstElementChild;
     if (!list) return;
@@ -12160,8 +12161,10 @@ div.items-center > div[style*="--max-conversation-width"],
         try { cwListObserver.disconnect(); } catch {}
       }
       cwListObservedTarget = list;
+      cwRowsDirty = true;
       cwListObserver = new MutationObserver(() => {
-        if (!disposed && FEAT.chatWorkSplit) frame(syncChatWorkSidebarRows);
+        cwRowsDirty = true;
+        if (!disposed && FEAT.chatWorkSplit) frame(() => syncChatWorkSidebarRows(true));
       });
       cwListObserver.observe(list, {
         childList: true,
@@ -12170,6 +12173,8 @@ div.items-center > div[style*="--max-conversation-width"],
         attributeFilter: ['data-index']
       });
     }
+    if (!force && !cwRowsDirty && list.getAttribute('data-ag-cw-active') === '1') return;
+    cwRowsDirty = false;
     const indexed = [];
     for (const child of list.children) {
       const rawIdx = child.getAttribute('data-index');
@@ -12180,26 +12185,29 @@ div.items-center > div[style*="--max-conversation-width"],
     if (!indexed.length) return;
     indexed.sort((a, b) => a.idx - b.idx);
 
+    const setKind = (el, kind) => {
+      if (el.getAttribute('data-ag-cw-kind') !== kind) el.setAttribute('data-ag-cw-kind', kind);
+    };
     let curBucket = 'work';
     for (const { el } of indexed) {
       const sh = el.querySelector('[data-testid="section-header"]');
       const hasAddProj = Boolean(el.querySelector('[data-testid="sidebar-add-project-button"]'));
       if (hasAddProj) {
         curBucket = 'work';
-        el.setAttribute('data-ag-cw-kind', 'work');
+        setKind(el, 'work');
         continue;
       }
       if (sh) {
         const title = String(sh.getAttribute('data-title') || sh.textContent || '').trim();
         if (CW_BOTH_SEC_RE.test(title) || sh.querySelector('[data-testid="pinned-section-header"], [data-testid="coordinator-section-header"]')) {
           curBucket = 'both';
-          el.setAttribute('data-ag-cw-kind', 'both');
+          setKind(el, 'both');
         } else if (CW_CHAT_SEC_RE.test(title)) {
           curBucket = 'chat';
-          el.setAttribute('data-ag-cw-kind', 'chat');
+          setKind(el, 'chat');
         } else {
           curBucket = 'work';
-          el.setAttribute('data-ag-cw-kind', 'work');
+          setKind(el, 'work');
         }
         continue;
       }
@@ -12208,12 +12216,14 @@ div.items-center > div[style*="--max-conversation-width"],
       );
       if (isFolder) {
         curBucket = 'work';
-        el.setAttribute('data-ag-cw-kind', 'work');
+        setKind(el, 'work');
         continue;
       }
-      el.setAttribute('data-ag-cw-kind', curBucket);
+      setKind(el, curBucket);
     }
-    list.setAttribute('data-ag-cw-active', '1');
+    if (list.getAttribute('data-ag-cw-active') !== '1') {
+      list.setAttribute('data-ag-cw-active', '1');
+    }
   }
 
   function syncChatWorkSwitch() {
@@ -12248,12 +12258,14 @@ div.items-center > div[style*="--max-conversation-width"],
       if (sw.parentElement !== sb || sw.nextElementSibling !== navWrap) {
         sb.insertBefore(sw, navWrap);
       }
-      sw.setAttribute('data-ag-cw-mode', currentCwMode);
-      sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
-        btn.setAttribute('aria-selected', String(btn.getAttribute('data-ag-cw-tab') === currentCwMode));
-      });
+      if (sw.getAttribute('data-ag-cw-mode') !== currentCwMode) {
+        sw.setAttribute('data-ag-cw-mode', currentCwMode);
+        sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
+          btn.setAttribute('aria-selected', String(btn.getAttribute('data-ag-cw-tab') === currentCwMode));
+        });
+      }
     }
-    syncChatWorkSidebarRows();
+    syncChatWorkSidebarRows(false);
   }
 
   function teardownChatWorkSwitch() {
@@ -12282,6 +12294,36 @@ div.items-center > div[style*="--max-conversation-width"],
     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>';
   const SVG_TB_FWD =
     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
+
+  let sbBrandWidthObserver = null;
+  let sbBrandObservedEl = null;
+  let sbBrandHostRef = null;
+
+  function applyBrandHostWidth(sbW) {
+    if (!sbBrandHostRef || !sbBrandHostRef.isConnected) return;
+    const nextW = sbW >= 160 && sbW <= 600 ? `${Math.round(sbW)}px` : '';
+    if (sbBrandHostRef.style.width !== nextW) sbBrandHostRef.style.width = nextW;
+  }
+
+  function ensureBrandWidthObserver(sbEl, brandHost) {
+    sbBrandHostRef = brandHost || null;
+    if (!sbEl || !brandHost) return;
+    if (sbBrandObservedEl === sbEl && sbBrandWidthObserver) return;
+    if (sbBrandWidthObserver) {
+      try { sbBrandWidthObserver.disconnect(); } catch {}
+      sbBrandWidthObserver = null;
+    }
+    sbBrandObservedEl = sbEl;
+    if (typeof ResizeObserver === 'function') {
+      sbBrandWidthObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          applyBrandHostWidth(entry.contentRect ? entry.contentRect.width : sbEl.offsetWidth);
+        }
+      });
+      sbBrandWidthObserver.observe(sbEl);
+    }
+    applyBrandHostWidth(sbEl.offsetWidth);
+  }
 
   function findNativeNavButtons() {
     const toggle = document.querySelector('button[data-testid="sidebar-toggle"]');
@@ -12376,6 +12418,25 @@ div.items-center > div[style*="--max-conversation-width"],
       const bFwd = grp.querySelector('#ag-tb-btn-fwd');
       if (bBack) bBack.disabled = !back || Boolean(back.disabled || back.getAttribute('aria-disabled') === 'true');
       if (bFwd) bFwd.disabled = !fwd || Boolean(fwd.disabled || fwd.getAttribute('aria-disabled') === 'true');
+
+      const helpBtn =
+        menuWrap.querySelector('button[data-ag-tb-help-btn="1"]') ||
+        Array.from(menuWrap.querySelectorAll('button[data-testid="title-menu-bar-item"]')).find(
+          (b) => (b.textContent || '').trim() === 'Antigravity'
+        );
+      if (helpBtn) {
+        if (helpBtn.getAttribute('data-ag-tb-help-btn') !== '1') {
+          helpBtn.setAttribute('data-ag-tb-help-btn', '1');
+          helpBtn.setAttribute('data-ag-i18n-ignore', '1');
+        }
+        const wantLbl = L('帮助', 'Help');
+        if ((helpBtn.textContent || '').trim() !== wantLbl) {
+          helpBtn.textContent = wantLbl;
+        }
+        if (helpBtn.parentElement && helpBtn.parentElement.getAttribute('data-ag-tb-help-wrap') !== '1') {
+          helpBtn.parentElement.setAttribute('data-ag-tb-help-wrap', '1');
+        }
+      }
     }
 
     const logoBtn = document.querySelector('button[data-testid="app-icon-new-conversation-button"]');
@@ -12388,10 +12449,8 @@ div.items-center > div[style*="--max-conversation-width"],
       const sbEl =
         document.querySelector('[data-testid="conversation-list-sidebar"]')?.closest('.bg-sidebar') ||
         document.querySelector('aside.bg-sidebar, div.bg-sidebar');
-      if (brandHost) {
-        const sbW = sbEl ? Math.round(sbEl.getBoundingClientRect().width) : 0;
-        const nextW = sbW >= 160 && sbW <= 600 ? `${sbW}px` : '';
-        if (brandHost.style.width !== nextW) brandHost.style.width = nextW;
+      if (brandHost && sbEl) {
+        ensureBrandWidthObserver(sbEl, brandHost);
       }
       applyColoredBrandLogo(logoBtn);
       if (document.getElementById('ag-tb-nav-group')) {
@@ -12405,8 +12464,20 @@ div.items-center > div[style*="--max-conversation-width"],
   }
 
   function teardownTitlebarAndBrandHeader() {
+    if (sbBrandWidthObserver) {
+      try { sbBrandWidthObserver.disconnect(); } catch {}
+      sbBrandWidthObserver = null;
+    }
+    sbBrandObservedEl = null;
+    sbBrandHostRef = null;
     const grp = document.getElementById('ag-tb-nav-group');
     if (grp) grp.remove();
+    document.querySelectorAll('[data-ag-tb-help-wrap="1"]').forEach((el) => el.removeAttribute('data-ag-tb-help-wrap'));
+    document.querySelectorAll('button[data-ag-tb-help-btn="1"]').forEach((el) => {
+      el.removeAttribute('data-ag-tb-help-btn');
+      el.removeAttribute('data-ag-i18n-ignore');
+      el.textContent = 'Antigravity';
+    });
     document.querySelectorAll('[data-ag-tb-proxied="1"]').forEach((el) => el.removeAttribute('data-ag-tb-proxied'));
     document.querySelectorAll('[data-ag-sb-brand-row="1"]').forEach((el) => {
       if (el.parentElement) el.parentElement.style.width = '';
@@ -12651,8 +12722,11 @@ div.items-center > div[style*="--max-conversation-width"],
   function injectForkIntoTurnActionBars() {
     const activeCid = extractCurrentUrlCascadeId();
     if (!activeCid) return;
-    const copyBtns = document.querySelectorAll('button[aria-label="复制"], button[aria-label="Copy"]');
+    const copyBtns = document.querySelectorAll(
+      'button[aria-label="复制"]:not([data-ag-fork-seen]), button[aria-label="Copy"]:not([data-ag-fork-seen])'
+    );
     for (const copyBtn of copyBtns) {
+      copyBtn.setAttribute('data-ag-fork-seen', '1');
       const bar = copyBtn.parentElement;
       if (!bar || bar.querySelector('.ag-fork-turn-btn')) continue;
       if (!bar.className || !String(bar.className).includes('shrink-0')) continue;
@@ -12688,6 +12762,7 @@ div.items-center > div[style*="--max-conversation-width"],
     document.removeEventListener('contextmenu', onForkTrackSidebarPointer, true);
     document.removeEventListener('keydown', onForkKeydown, true);
     document.querySelectorAll('.ag-fork-turn-btn, .ag-fork-menu-item').forEach((el) => el.remove());
+    document.querySelectorAll('[data-ag-fork-seen]').forEach((el) => el.removeAttribute('data-ag-fork-seen'));
   }
 
   /* ==========================================================================
@@ -12930,7 +13005,8 @@ div.items-center > div[style*="--max-conversation-width"],
     const sig = JSON.stringify({
       n: profile.name,
       e: profile.email,
-      a: profile.avatar,
+      aLen: profile.avatar ? profile.avatar.length : 0,
+      aHead: profile.avatar ? profile.avatar.slice(0, 32) : '',
       t: profile.tier,
       r: rows.map((x) => `${x.label}:${x.usedStr}`),
       lang: FEAT.i18n
@@ -14159,7 +14235,8 @@ div.items-center > div[style*="--max-conversation-width"],
     invMemory: false,
     invSkills: false,
     invAgents: false,
-    connectorsExtra: false
+    connectorsExtra: false,
+    bgTasks: false
   };
   let ovCollapseState = (() => {
     try {
@@ -14453,22 +14530,33 @@ div.items-center > div[style*="--max-conversation-width"],
     if (!sc) return;
     for (const child of sc.children) {
       if (child.id === 'ag-claude-ov-sections' || child.hasAttribute('data-ag-ov-shortcuts')) continue;
-      const inner = child.firstElementChild;
-      if (!inner || inner.children.length < 2) continue;
-      const hdr = inner.firstElementChild;
-      if (!hdr || !/后台任务|background\s+tasks/i.test(hdr.textContent || '')) continue;
-      if (!child.hasAttribute('data-ag-ov-bgtask')) {
-        child.setAttribute('data-ag-ov-bgtask', ovCollapseState.bgTasks ? 'open' : 'collapsed');
-      }
-      if (!hdr.hasAttribute('data-ag-ov-bgtask-bound')) {
-        hdr.setAttribute('data-ag-ov-bgtask-bound', '1');
-        hdr.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const nextOpen = child.getAttribute('data-ag-ov-bgtask') !== 'open';
-          ovCollapseState.bgTasks = nextOpen;
-          saveOvCollapseState();
-          child.setAttribute('data-ag-ov-bgtask', nextOpen ? 'open' : 'collapsed');
+      const btn = child.firstElementChild;
+      if (!btn || btn.tagName !== 'BUTTON') continue;
+      if (!/后台任务|background\s+tasks/i.test(btn.textContent || '')) continue;
+      const readNativeOpen = () => {
+        const svg = btn.querySelector('svg');
+        if (svg && svg.classList) return svg.classList.contains('rotate-90');
+        return Boolean(child.querySelector('[data-testid="background-task-row"]'));
+      };
+      if (!btn.hasAttribute('data-ag-ov-bgtask-bound')) {
+        btn.setAttribute('data-ag-ov-bgtask-bound', '1');
+        btn.addEventListener('click', (e) => {
+          if (e.__agBgTaskSync) return;
+          setTimeout(() => {
+            if (!btn.isConnected) return;
+            const nowOpen = readNativeOpen();
+            if (ovCollapseState.bgTasks !== nowOpen) {
+              ovCollapseState.bgTasks = nowOpen;
+              persistOvCollapseState();
+            }
+          }, 30);
         });
+        const wantOpen = Boolean(ovCollapseState.bgTasks);
+        if (readNativeOpen() !== wantOpen) {
+          const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+          ev.__agBgTaskSync = true;
+          btn.dispatchEvent(ev);
+        }
       }
     }
   }

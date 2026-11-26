@@ -1182,13 +1182,32 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="thinking-col
 }
 
 /* 展开动画交给 Antigravity 原生内联 opacity + transform GPU 过渡，避免与自定义 max-height 关键帧叠加产生二次跳弹和 mask-image 闪烁 */
+/* 滚动对话流内的高频卡片不启用 backdrop-filter，避免长对话产生大量 GPU 模糊合成层 */
 [data-testid="tool-group-collapsible"][aria-expanded="true"] + div,
 .ag-collapse-ghost {
   margin: 4px 0 8px 0 !important;
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.08)) !important;
+  border: 1px solid rgba(20, 20, 19, 0.09) !important;
   border-radius: 12px !important;
-  background-color: var(--card, #FFFFFF) !important;
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 2px 8px rgba(15, 15, 14, 0.04) !important;
   font-size: 13px !important;
+  overflow: hidden !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) :is([data-testid="tool-group-collapsible"][aria-expanded="true"] + div, .ag-collapse-ghost) {
+  background-color: rgba(28, 28, 30, 0.86) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="tool-group-collapsible"][aria-expanded="true"] + div > div > * + *,
+:is(html[data-ag-theme-mode="dark"] body, body.dark) .ag-collapse-ghost > div > * + * {
+  border-top-color: rgba(255, 255, 255, 0.055) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="tool-group-collapsible"][aria-expanded="true"] + div button:hover {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+  color: #ECECEA !important;
 }
 
 .ag-collapse-ghost {
@@ -7376,30 +7395,6 @@ html[data-ag-glass="on"] [data-testid="overview-panel"][data-ag-ov-enhanced="1"]
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18) !important;
 }
 
-/* Default collapse toggle for native trailing overview sections (e.g. Background Tasks), keeping transparent background */
-[data-testid="overview-panel"][data-ag-ov-enhanced="1"] [data-ag-ov-bgtask] [data-ag-ov-bgtask-bound="1"] {
-  cursor: pointer !important;
-  user-select: none !important;
-}
-
-[data-testid="overview-panel"][data-ag-ov-enhanced="1"] [data-ag-ov-bgtask] [data-ag-ov-bgtask-bound="1"]::before {
-  content: '›';
-  display: inline-block;
-  margin-right: 6px;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--muted-foreground, #8E8D88);
-  transition: transform 140ms ease;
-}
-
-[data-testid="overview-panel"][data-ag-ov-enhanced="1"] [data-ag-ov-bgtask="open"] [data-ag-ov-bgtask-bound="1"]::before {
-  transform: rotate(90deg);
-}
-
-[data-testid="overview-panel"][data-ag-ov-enhanced="1"] [data-ag-ov-bgtask="collapsed"] > div > :not(:first-child) {
-  display: none !important;
-}
-
 /* Popovers, Model Picker, Quota Card (exclude .ag-cux-settings-group so it matches native flat settings cards) */
 html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is(#ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, #ag-claude-quota-popover, #ag-live-metrics-tooltip) {
   background-color: rgba(36, 36, 34, 0.76) !important;
@@ -7460,20 +7455,15 @@ html[data-ag-glass="on"]:is([data-ag-theme-mode="dark"], :has(body.dark)) :is([d
 }
 
 :is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="changed-files-card"] {
-  background-color: rgba(31, 31, 30, 0.88) !important;
+  background-color: rgba(28, 28, 30, 0.86) !important;
   border: 1px solid rgba(255, 255, 255, 0.09) !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
 }
 
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="changed-files-card"] {
-  background-color: rgba(255, 255, 255, 0.90) !important;
+  background-color: rgba(255, 255, 255, 0.94) !important;
   border: 1px solid rgba(20, 20, 19, 0.09) !important;
-  box-shadow: 0 3px 12px rgba(15, 15, 14, 0.05) !important;
-}
-
-html[data-ag-glass="on"] [data-testid="changed-files-card"] {
-  backdrop-filter: blur(14px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
+  box-shadow: 0 2px 8px rgba(15, 15, 14, 0.04) !important;
 }
 
 [data-testid="changed-files-card"] [data-testid="changed-files-card-header"] {
@@ -8255,6 +8245,10 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-sb-quota-popover {
   flex-shrink: 0 !important;
 }
 
+[data-ag-tb-help-wrap="1"] {
+  order: 10 !important;
+}
+
 #ag-tb-nav-group #ag-tb-btn-sidebar {
   margin-right: 6px !important;
 }
@@ -8281,22 +8275,46 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-sb-quota-popover {
   color: var(--foreground, #ececea) !important;
 }
 
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-tb-nav-group .ag-tb-nav-btn {
+  color: rgba(20, 20, 19, 0.72) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-tb-nav-group .ag-tb-nav-btn:hover:not(:disabled) {
+  background-color: rgba(20, 20, 19, 0.08) !important;
+  color: #141413 !important;
+}
+
 #ag-tb-nav-group .ag-tb-nav-btn:disabled {
   opacity: 0.34 !important;
   cursor: default !important;
 }
 
-button[data-testid="title-menu-bar-item"] {
-  font-weight: 500 !important;
-  font-size: 13px !important;
-  letter-spacing: 0.01em !important;
+@layer base {
+  button[data-testid="title-menu-bar-item"],
+  button[data-testid="title-menu-bar-item"] span {
+    font-weight: 500 !important;
+    font-size: 13px !important;
+    letter-spacing: 0.01em !important;
+  }
 }
 
-:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"] {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) button[data-testid="title-menu-bar-item"],
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) button[data-testid="title-menu-bar-item"] span {
+  color: rgba(20, 20, 19, 0.78) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) button[data-testid="title-menu-bar-item"]:hover,
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) button[data-testid="title-menu-bar-item"]:hover span {
+  color: #141413 !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"],
+:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"] span {
   color: rgba(236, 236, 234, 0.78) !important;
 }
 
-:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"]:hover {
+:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"]:hover,
+:is(html[data-ag-theme-mode="dark"] body, body.dark) button[data-testid="title-menu-bar-item"]:hover span {
   color: #FAF9F5 !important;
 }
 
@@ -8497,20 +8515,18 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-fork-submenu {
 [data-testid="step-plan"] {
   padding: 10px 14px !important;
   border-radius: 12px !important;
-  backdrop-filter: blur(12px) saturate(125%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(125%) !important;
 }
 
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="step-plan"] {
-  background-color: rgba(255, 255, 255, 0.84) !important;
+  background-color: rgba(255, 255, 255, 0.94) !important;
   border-color: rgba(20, 20, 19, 0.09) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  box-shadow: 0 2px 8px rgba(15, 15, 14, 0.04) !important;
 }
 
 :is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="step-plan"] {
-  background-color: rgba(28, 28, 30, 0.72) !important;
+  background-color: rgba(28, 28, 30, 0.86) !important;
   border-color: rgba(255, 255, 255, 0.09) !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
 }
 
 [data-testid="step-plan"] > ol {
@@ -8552,10 +8568,12 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="step-plan-it
   background-color: rgba(96, 165, 250, 0.09) !important;
 }
 
+[data-testid="step-plan-item"][data-status="in_progress"] > span:first-child,
 [data-testid="step-plan-item"][data-status="in_progress"] svg {
   color: #2F75C3 !important;
 }
 
+:is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="step-plan-item"][data-status="in_progress"] > span:first-child,
 :is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="step-plan-item"][data-status="in_progress"] svg {
   color: #60A5FA !important;
 }
@@ -8602,6 +8620,29 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-testid="step-plan-it
 :is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="step-plan-item"][data-status="failed"] > span:nth-child(2) {
   color: #FCA5A5 !important;
 }
+
+/* Unified cool-slate frosted surface for right Overview cards & dark Markdown code blocks */
+:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-claude-ov-sections section.ag-ov-card {
+  background-color: rgba(28, 28, 30, 0.74) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(12px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(125%) !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-claude-ov-sections section.ag-ov-card {
+  background-color: rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(20, 20, 19, 0.09) !important;
+  box-shadow: 0 2px 8px rgba(15, 15, 14, 0.04) !important;
+  backdrop-filter: blur(12px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(125%) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) :is([data-markdown-root], .prose) pre {
+  background-color: rgba(24, 24, 27, 0.82) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
 
 
 
