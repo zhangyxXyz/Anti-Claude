@@ -8638,11 +8638,6 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) #ag-claude-ov-sections sec
   -webkit-backdrop-filter: blur(12px) saturate(125%) !important;
 }
 
-:is(html[data-ag-theme-mode="dark"] body, body.dark) :is([data-markdown-root], .prose) pre {
-  background-color: rgba(24, 24, 27, 0.82) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-}
-
 
 
 
