@@ -8777,6 +8777,12 @@ body[data-ag-resizing-chat="1"] div.mx-auto[style*="--max-conversation-width"] .
   overflow-anchor: none !important;
 }
 
+/* Remove stale native min-height: calc(75cqh - 50px) on the latest turn so
+ * cross-monitor DPI/resize changes and short historical turns never leave a huge bottom void */
+[data-main-content-body] div.flex.items-start[style*="cqh"] {
+  min-height: 0 !important;
+}
+
 body[data-has-browser-hole="true"] .ag-chat-resize-rail {
   display: none !important;
 }

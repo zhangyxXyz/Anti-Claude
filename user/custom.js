@@ -13056,7 +13056,29 @@ div.items-center > div[style*="--max-conversation-width"],
     }
   };
 
-  window.addEventListener('resize', scheduleOverviewInsetCheck);
+  let winResizeSettleTimer = 0;
+  let winResizeStickBottom = false;
+  const onWindowResizeChatSettle = () => {
+    if (disposed || chatResizeActive) return;
+    scheduleOverviewInsetCheck();
+    if (!winResizeSettleTimer) {
+      const sc = getChatMessageScroller();
+      winResizeStickBottom = !userManualScrollUp && isScrollerAtBottom(sc);
+    }
+    if (winResizeSettleTimer) clearTimeout(winResizeSettleTimer);
+    winResizeSettleTimer = setTimeout(() => {
+      winResizeSettleTimer = 0;
+      const shouldStick = winResizeStickBottom;
+      winResizeStickBottom = false;
+      if (disposed || userManualScrollUp || !shouldStick) return;
+      const sc = getChatMessageScroller();
+      if (sc && sc.isConnected) {
+        sc.scrollTop = sc.scrollHeight;
+      }
+    }, 200);
+  };
+
+  window.addEventListener('resize', onWindowResizeChatSettle);
   document.addEventListener('click', onOverviewToggleClick, true);
 
   function showChatResizeBadge(widthPx) {
