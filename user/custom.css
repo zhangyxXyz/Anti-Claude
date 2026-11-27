@@ -460,8 +460,8 @@ html body .code-line {
 /* ============================================================================
  * 1. Light Mode · Pure Crisp #FFFFFF + Neutral Subtle Gray
  * ============================================================================ */
-html:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)),
-html:not([data-ag-theme-mode="dark"]):not(:has(> body.dark))[data-ag-preset],
+html:not([data-ag-theme-mode="dark"]),
+html:not([data-ag-theme-mode="dark"])[data-ag-preset],
 html:not([data-ag-theme-mode="dark"]) body:not(.dark),
 html:not([data-ag-theme-mode="dark"])[data-ag-preset] body:not(.dark) {
   --primary: #2F75C3 !important;
@@ -539,7 +539,6 @@ html:not([data-ag-theme-mode="dark"])[data-ag-preset] body:not(.dark) {
  * ============================================================================ */
 html[data-ag-theme-mode="dark"],
 html[data-ag-theme-mode="dark"] body,
-html:has(> body.dark),
 body.dark,
 body.theme-dark,
 body[data-agy-theme].dark,
@@ -8360,7 +8359,8 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) .ag-sb-brand-name {
   color: var(--foreground, #141413) !important;
 }
 
-[data-ag-tb-proxied="1"] {
+[data-ag-tb-proxied="1"],
+[data-ag-sb-brand-row="1"] button[data-testid="sidebar-toggle"] {
   display: none !important;
 }
 
@@ -8765,14 +8765,16 @@ body[data-ag-resizing-chat="1"] {
   user-select: none !important;
 }
 
-body[data-ag-resizing-chat="1"] [data-main-content-body] * {
-  transition: none !important;
-}
-
-/* Skip offscreen turn layout ONLY while actively drag-resizing (never during normal streaming, so stick-to-bottom auto-scroll stays 100% rock-solid) */
+/* Skip offscreen turn layout ONLY while actively drag-resizing (never during normal streaming or sidebar toggles) */
 body[data-ag-resizing-chat="1"] div.mx-auto[style*="--max-conversation-width"] .relative.flex.flex-col.gap-y-3 > div {
   content-visibility: auto !important;
   contain-intrinsic-size: auto 240px !important;
+}
+
+/* Prevent browser scroll anchoring from locking onto expanding step/tool cards during streaming */
+[data-testid="step-plan"],
+[data-testid="tool-group-collapsible"] + div {
+  overflow-anchor: none !important;
 }
 
 body[data-has-browser-hole="true"] .ag-chat-resize-rail {

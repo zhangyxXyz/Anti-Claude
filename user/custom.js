@@ -172,13 +172,11 @@ pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #
     const usableExpr = 'calc(100% - var(--ag-ov-extra-inset, 0px))';
     const clampedColW = `min(${usableExpr}, var(--ag-chat-col-w, ${CHAT_WIDTH_DEFAULT}px))`;
     const centeredLeft = `max(0px, calc((${usableExpr} - ${clampedColW}) / 2))`;
-    rules.push(`div.items-center:has(> div[style*="--max-conversation-width"]) {
-  align-items: stretch !important;
-}
-div.mx-auto[style*="--max-conversation-width"],
+    rules.push(`div.mx-auto[style*="--max-conversation-width"],
 div.items-center > div[style*="--max-conversation-width"],
-.agy-home div.items-center:has(> div[style*="--max-conversation-width"]) > div {
+.agy-home > div > div[style*="--max-conversation-width"] {
   --max-conversation-width: ${clampedColW} !important;
+  align-self: flex-start !important;
   width: 100% !important;
   max-width: ${clampedColW} !important;
   margin-left: ${centeredLeft} !important;
@@ -808,7 +806,7 @@ div.items-center > div[style*="--max-conversation-width"],
   let lastSyncTs = 0;
   function syncStepStream() {
     rafPending = false;
-    if (disposed || chatResizeActive) return;
+    if (disposed || chatResizeActive || auxSidebarAnimTimer) return;
     lastSyncTs = Date.now();
     if (FEAT.stepUnfold) {
       const workedBtns = document.querySelectorAll('button[data-testid="worked-for-collapsible"]');
@@ -848,6 +846,7 @@ div.items-center > div[style*="--max-conversation-width"],
     syncModelTriggerDisplay();
     syncTitlebarAndBrandHeader();
     syncChatFreeResizeRails();
+    syncStreamingBottomLock();
     syncConversationForkUi();
     syncChatWorkSwitch();
     syncSidebarFooterCard(false);
@@ -12354,10 +12353,16 @@ div.items-center > div[style*="--max-conversation-width"],
     applyBrandHostWidth(sbEl.offsetWidth);
   }
 
-  function findNativeNavButtons() {
-    const toggle = document.querySelector('button[data-testid="sidebar-toggle"]');
-    const back = document.querySelector('button[aria-label="后退"], button[aria-label="Back"]');
-    const fwd = document.querySelector('button[aria-label="前进"], button[aria-label="Forward"]');
+  function findNativeNavButtons(scopeRoot) {
+    const root = scopeRoot || document;
+    const toggle =
+      root.querySelector('button[data-testid="sidebar-toggle"]') ||
+      document.querySelector('[data-ag-sb-brand-row="1"] button[data-testid="sidebar-toggle"]') ||
+      document.querySelector('button[data-testid="sidebar-toggle"]');
+    const back = root.querySelector('button[aria-label="后退"], button[aria-label="Back"]') ||
+      document.querySelector('button[aria-label="后退"], button[aria-label="Back"]');
+    const fwd = root.querySelector('button[aria-label="前进"], button[aria-label="Forward"]') ||
+      document.querySelector('button[aria-label="前进"], button[aria-label="Forward"]');
     return { toggle, back, fwd };
   }
 
@@ -12409,7 +12414,9 @@ div.items-center > div[style*="--max-conversation-width"],
     if (disposed) return;
     const menuItem = document.querySelector('[data-testid="title-menu-bar-item"]');
     const menuWrap = menuItem && menuItem.parentElement && menuItem.parentElement.parentElement;
-    const { toggle, back, fwd } = findNativeNavButtons();
+    const logoBtn = document.querySelector('button[data-testid="app-icon-new-conversation-button"]');
+    const brandRow = logoBtn && logoBtn.parentElement;
+    const { toggle, back, fwd } = findNativeNavButtons(brandRow);
 
     if (menuWrap) {
       let grp = document.getElementById('ag-tb-nav-group');
@@ -12424,7 +12431,10 @@ div.items-center > div[style*="--max-conversation-width"],
         grp.querySelector('#ag-tb-btn-sidebar').addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const btn = document.querySelector('button[data-testid="sidebar-toggle"]');
+          beginTemporaryLayoutBurst(360);
+          const btn =
+            document.querySelector('[data-ag-sb-brand-row="1"] button[data-testid="sidebar-toggle"]') ||
+            document.querySelector('button[data-testid="sidebar-toggle"]');
           if (btn) btn.click();
         });
         grp.querySelector('#ag-tb-btn-back').addEventListener('click', (e) => {
@@ -12468,8 +12478,6 @@ div.items-center > div[style*="--max-conversation-width"],
       }
     }
 
-    const logoBtn = document.querySelector('button[data-testid="app-icon-new-conversation-button"]');
-    const brandRow = logoBtn && logoBtn.parentElement;
     if (logoBtn && brandRow) {
       if (brandRow.getAttribute('data-ag-sb-brand-row') !== '1') {
         brandRow.setAttribute('data-ag-sb-brand-row', '1');
@@ -12807,6 +12815,97 @@ div.items-center > div[style*="--max-conversation-width"],
   let mbInsetObservedEl = null;
   let ovInsetResizeRaf = 0;
   let ovInsetSettleTimer = 0;
+  let auxSidebarAnimTimer = 0;
+
+  function getChatMessageScroller() {
+    const msgCol = document.querySelector('div.mx-auto[style*="--max-conversation-width"]');
+    return (msgCol && msgCol.parentElement) || null;
+  }
+
+  function isScrollerAtBottom(sc) {
+    if (!sc) return false;
+    return sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 84;
+  }
+
+  let userManualScrollUp = false;
+  let lastAutoScrollCid = '';
+
+  const onStreamScrollWheel = (e) => {
+    const sc = getChatMessageScroller();
+    if (!sc || !e.target || !sc.contains(e.target)) return;
+    if (e.deltaY < -2) {
+      userManualScrollUp = true;
+    } else if (e.deltaY > 2) {
+      requestAnimationFrame(() => {
+        if (sc.isConnected && isScrollerAtBottom(sc)) userManualScrollUp = false;
+      });
+    }
+  };
+
+  const onStreamScrollKey = (e) => {
+    if (e.key === 'PageUp' || e.key === 'Home') {
+      const ae = document.activeElement;
+      if (!ae || !ae.closest('[contenteditable="true"], input, textarea')) {
+        userManualScrollUp = true;
+      }
+    } else if (e.key === 'End') {
+      userManualScrollUp = false;
+    }
+  };
+
+  const onStreamScrollClick = (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('button');
+    if (!btn) return;
+    if (/bottom|底部|最新|scroll/i.test((btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || ''))) {
+      userManualScrollUp = false;
+    }
+    const sc = getChatMessageScroller();
+    if (sc && !e.target.closest('[data-testid="step-plan"], [data-testid="tool-group-collapsible"]') && e.target === sc) {
+      userManualScrollUp = true;
+    }
+  };
+
+  document.addEventListener('wheel', onStreamScrollWheel, { passive: true, capture: true });
+  document.addEventListener('keydown', onStreamScrollKey, true);
+  document.addEventListener('click', onStreamScrollClick, true);
+
+  function syncStreamingBottomLock() {
+    if (disposed || chatResizeActive) return;
+    const cid = extractCurrentUrlCascadeId();
+    if (cid && cid !== lastAutoScrollCid) {
+      lastAutoScrollCid = cid;
+      userManualScrollUp = false;
+    }
+    if (userManualScrollUp) return;
+    if (typeof isPaneCurrentlyRunning === 'function' && !isPaneCurrentlyRunning()) return;
+    const sc = getChatMessageScroller();
+    if (!sc) return;
+    const gap = sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+    if (gap > 8 && gap <= 520) {
+      sc.scrollTop = sc.scrollHeight;
+    }
+  }
+
+  function beginTemporaryLayoutBurst(durationMs = 340) {
+    if (disposed || chatResizeActive) return;
+    const sc = getChatMessageScroller();
+    const stickBottom = isScrollerAtBottom(sc);
+    if (auxSidebarAnimTimer) clearTimeout(auxSidebarAnimTimer);
+    if (stickBottom && sc) {
+      setTimeout(() => {
+        if (!disposed && sc.isConnected) sc.scrollTop = sc.scrollHeight;
+      }, 180);
+    }
+    auxSidebarAnimTimer = setTimeout(() => {
+      auxSidebarAnimTimer = 0;
+      if (!disposed) {
+        updateOverviewInsetPx(true, false);
+        if (stickBottom && sc && sc.isConnected) {
+          sc.scrollTop = sc.scrollHeight;
+        }
+      }
+    }, durationMs);
+  }
 
   function ensureOvHostObserver() {
     if (disposed || typeof MutationObserver !== 'function') return;
@@ -12820,8 +12919,10 @@ div.items-center > div[style*="--max-conversation-width"],
       if (disposed) return;
       const curOv = document.querySelector('[data-testid="overview-panel"]');
       if (curOv !== ovInsetObservedEl) {
-        updateOverviewInsetPx(true);
-        scheduleOverviewInsetCheck();
+        if (curOv && typeof syncOverviewPanel === 'function') {
+          syncOverviewPanel(false);
+        }
+        updateOverviewInsetPx(true, true);
       }
     });
     ovHostMutObserver.observe(host, { childList: true, subtree: true });
@@ -12838,48 +12939,44 @@ div.items-center > div[style*="--max-conversation-width"],
     if (ovInsetSettleTimer) clearTimeout(ovInsetSettleTimer);
     ovInsetSettleTimer = setTimeout(() => {
       ovInsetSettleTimer = 0;
-      if (!disposed) updateOverviewInsetPx(true);
-    }, 260);
+      if (!disposed) updateOverviewInsetPx(true, false);
+    }, 420);
   }
 
-  function applyOvInsetWithFlip(nextRaw, nextExtra) {
-    const extraChanged = nextExtra !== currentOvExtraInsetPx;
-    const targets = [];
-    if (extraChanged && !chatResizeActive) {
-      const msgCol = document.querySelector('div.mx-auto[style*="--max-conversation-width"]');
-      const compCol = document.querySelector('div.items-center > div[style*="--max-conversation-width"]');
-      for (const el of [msgCol, compCol]) {
-        if (el && el.isConnected && typeof el.animate === 'function') {
-          const r = el.getBoundingClientRect();
-          if (r.width > 100) targets.push({ el, oldLeft: r.left, oldW: r.width });
-        }
-      }
-    }
+  function applyOvInsetWithFlip(nextRaw, nextExtra, allowFlip = true) {
+    const prevExtra = currentOvExtraInsetPx;
+    const extraChanged = nextExtra !== prevExtra;
+    const mainBody = document.querySelector('[data-main-content-body]');
+    const varTarget = mainBody || docRoot;
     if (nextRaw !== currentOvInsetPx) {
       currentOvInsetPx = nextRaw;
-      if (docRoot) docRoot.style.setProperty('--ag-ov-inset', `${nextRaw}px`);
+      if (varTarget) varTarget.style.setProperty('--ag-ov-inset', `${nextRaw}px`);
     }
     if (extraChanged) {
       currentOvExtraInsetPx = nextExtra;
-      if (docRoot) docRoot.style.setProperty('--ag-ov-extra-inset', `${nextExtra}px`);
+      if (varTarget) varTarget.style.setProperty('--ag-ov-extra-inset', `${nextExtra}px`);
     }
-    if (targets.length) {
-      for (const t of targets) {
-        const nr = t.el.getBoundingClientRect();
-        const dx = t.oldLeft - nr.left;
-        if (Math.abs(nr.width - t.oldW) <= 2 && Math.abs(dx) >= 4) {
-          try {
-            t.el.animate(
-              [{ transform: `translate3d(${dx}px, 0, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
-              { duration: 190, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
-            );
-          } catch {}
+    if (allowFlip && extraChanged && !chatResizeActive && !auxSidebarAnimTimer) {
+      const dx = Math.round(((nextExtra - prevExtra) / 2) * 10) / 10;
+      if (Math.abs(dx) >= 4) {
+        const msgCol = document.querySelector('div.mx-auto[style*="--max-conversation-width"]');
+        const compCol = document.querySelector('div.items-center > div[style*="--max-conversation-width"]');
+        for (const el of [msgCol, compCol]) {
+          if (el && el.isConnected && typeof el.animate === 'function') {
+            try {
+              el.animate(
+                [{ transform: `translate3d(${dx}px, 0, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
+                { duration: 400, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
+              );
+            } catch {}
+          }
         }
       }
     }
   }
 
-  function updateOverviewInsetPx(force = false) {
+  function updateOverviewInsetPx(force = false, allowFlip = true) {
+    if (auxSidebarAnimTimer && !force) return;
     const mainBody = document.querySelector('[data-main-content-body]');
     const ovPanel = document.querySelector('[data-testid="overview-panel"]');
     if (!force && ovPanel === ovInsetObservedEl && mainBody === mbInsetObservedEl && (ovPanel || currentOvInsetPx === 0)) {
@@ -12911,7 +13008,7 @@ div.items-center > div[style*="--max-conversation-width"],
         }
       }
     }
-    applyOvInsetWithFlip(rawInset, extraInset);
+    applyOvInsetWithFlip(rawInset, extraInset, allowFlip);
     if (typeof ResizeObserver === 'function' && (ovPanel !== ovInsetObservedEl || mainBody !== mbInsetObservedEl)) {
       if (ovInsetObserver) {
         try { ovInsetObserver.disconnect(); } catch {}
@@ -12920,7 +13017,10 @@ div.items-center > div[style*="--max-conversation-width"],
       ovInsetObservedEl = ovPanel || null;
       mbInsetObservedEl = mainBody || null;
       if (ovPanel || mainBody) {
-        ovInsetObserver = new ResizeObserver(() => scheduleOverviewInsetCheck());
+        ovInsetObserver = new ResizeObserver(() => {
+          if (auxSidebarAnimTimer) return;
+          scheduleOverviewInsetCheck();
+        });
         if (ovPanel) ovInsetObserver.observe(ovPanel);
         if (mainBody) ovInsetObserver.observe(mainBody);
       }
@@ -12928,13 +13028,31 @@ div.items-center > div[style*="--max-conversation-width"],
   }
 
   const onOverviewToggleClick = (e) => {
+    const splitBtn =
+      e.target &&
+      e.target.closest &&
+      e.target.closest(
+        'button[data-testid="toggle-aux-sidebar"], button[data-testid="sidebar-toggle"], #ag-tb-btn-sidebar'
+      );
+    if (splitBtn) {
+      beginTemporaryLayoutBurst(360);
+      return;
+    }
     const btn = e.target && e.target.closest && e.target.closest('button[data-testid="toggle-overview-panel"]');
     if (!btn) return;
     if (btn.getAttribute('aria-pressed') === 'true') {
-      applyOvInsetWithFlip(0, 0);
-      scheduleOverviewInsetCheck();
+      applyOvInsetWithFlip(0, 0, true);
+      if (ovInsetSettleTimer) clearTimeout(ovInsetSettleTimer);
+      ovInsetSettleTimer = setTimeout(() => {
+        ovInsetSettleTimer = 0;
+        if (!disposed) updateOverviewInsetPx(true, false);
+      }, 430);
     } else {
-      scheduleOverviewInsetCheck();
+      if (ovInsetSettleTimer) clearTimeout(ovInsetSettleTimer);
+      ovInsetSettleTimer = setTimeout(() => {
+        ovInsetSettleTimer = 0;
+        if (!disposed) updateOverviewInsetPx(true, false);
+      }, 430);
     }
   };
 
@@ -12970,6 +13088,7 @@ div.items-center > div[style*="--max-conversation-width"],
         Math.min(CHAT_WIDTH_MAX, Math.floor(mainBody.clientWidth - currentOvInsetPx - 48))
       );
       const startW = Math.max(CHAT_WIDTH_MIN, Math.min(maxAvail, currentChatWidth > 0 ? currentChatWidth : CHAT_WIDTH_DEFAULT));
+      const scroller = getChatMessageScroller();
       chatResizeActive = {
         side,
         startX: e.clientX,
@@ -12979,6 +13098,8 @@ div.items-center > div[style*="--max-conversation-width"],
         pendingW: startW,
         rafId: 0,
         mainBody,
+        scroller,
+        stickBottom: isScrollerAtBottom(scroller),
         pointerId: e.pointerId,
         rail
       };
@@ -13012,6 +13133,8 @@ div.items-center > div[style*="--max-conversation-width"],
       if (chatResizeActive.rafId) cancelAnimationFrame(chatResizeActive.rafId);
       const finalW = chatResizeActive.pendingW;
       const mbRef = chatResizeActive.mainBody;
+      const scRef = chatResizeActive.scroller;
+      const stickBottom = chatResizeActive.stickBottom;
       const pid = chatResizeActive.pointerId;
       chatResizeActive = null;
       try { rail.releasePointerCapture(pid); } catch {}
@@ -13019,6 +13142,11 @@ div.items-center > div[style*="--max-conversation-width"],
       document.body.removeAttribute('data-ag-resizing-chat');
       hideChatResizeBadge();
       setChatWidthOverride(finalW === CHAT_WIDTH_DEFAULT ? 0 : finalW);
+      if (stickBottom && scRef && scRef.isConnected) {
+        requestAnimationFrame(() => {
+          if (scRef.isConnected) scRef.scrollTop = scRef.scrollHeight;
+        });
+      }
     };
     rail.addEventListener('pointerup', finishDrag);
     rail.addEventListener('pointercancel', finishDrag);
@@ -13068,6 +13196,9 @@ div.items-center > div[style*="--max-conversation-width"],
     chatResizeActive = null;
     window.removeEventListener('resize', scheduleOverviewInsetCheck);
     document.removeEventListener('click', onOverviewToggleClick, true);
+    document.removeEventListener('wheel', onStreamScrollWheel, true);
+    document.removeEventListener('keydown', onStreamScrollKey, true);
+    document.removeEventListener('click', onStreamScrollClick, true);
     if (ovInsetResizeRaf) {
       cancelAnimationFrame(ovInsetResizeRaf);
       ovInsetResizeRaf = 0;
@@ -13075,6 +13206,10 @@ div.items-center > div[style*="--max-conversation-width"],
     if (ovInsetSettleTimer) {
       clearTimeout(ovInsetSettleTimer);
       ovInsetSettleTimer = 0;
+    }
+    if (auxSidebarAnimTimer) {
+      clearTimeout(auxSidebarAnimTimer);
+      auxSidebarAnimTimer = 0;
     }
     if (ovInsetObserver) {
       try { ovInsetObserver.disconnect(); } catch {}
