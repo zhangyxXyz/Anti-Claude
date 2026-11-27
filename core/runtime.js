@@ -671,6 +671,18 @@
 
     syncMetricsResizeObserver(bottomRow, leftGroup, rightGroup);
 
+    const isMountedHere =
+      pill.parentElement === leftGroup || (bottomRow.parentElement && pill.parentElement === bottomRow.parentElement);
+    if (
+      !forceLayout &&
+      !isNewPill &&
+      isMountedHere &&
+      window.__ag_last_metrics_layout_sig &&
+      window.__ag_metrics_ro_target === bottomRow
+    ) {
+      return pill;
+    }
+
     const rowW = bottomRow.clientWidth || 0;
     if (rowW <= 0) {
       if (!pill.parentElement) leftGroup.appendChild(pill);
@@ -679,8 +691,6 @@
     const leftW = measureNaturalLeftWidth(leftGroup);
     const rightW = rightGroup ? rightGroup.offsetWidth || 0 : 0;
     const curLayoutSig = rowW + ':' + leftW + ':' + rightW;
-    const isMountedHere =
-      pill.parentElement === leftGroup || (bottomRow.parentElement && pill.parentElement === bottomRow.parentElement);
     if (!forceLayout && !isNewPill && isMountedHere && window.__ag_last_metrics_layout_sig === curLayoutSig) {
       return pill;
     }

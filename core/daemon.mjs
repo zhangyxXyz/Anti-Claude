@@ -632,10 +632,11 @@ function startMacCdpBootstrap() {
     if (!activeConfig.enabled || attachedTargets.size > 0) return 15000;
     if (procs.some((p) => p.hasCdp)) return 6000;
     if (procs.length === 0) {
-      emptyStreak = Math.min(emptyStreak + 1, 6);
+      emptyStreak = Math.min(emptyStreak + 1, 10);
       if (emptyStreak <= 2) return 1200;
-      if (emptyStreak <= 4) return 2200;
-      return 3500;
+      if (emptyStreak <= 4) return 2500;
+      if (emptyStreak <= 6) return 5000;
+      return 10000;
     }
     emptyStreak = 0;
     return 750;
@@ -643,7 +644,7 @@ function startMacCdpBootstrap() {
 
   const checkFreshLaunch = () => {
     if (busy || shuttingDown) return;
-    rebuildBundleIfNeeded();
+    if (!cachedBootPayloadBase) rebuildBundleIfNeeded();
     if (!activeConfig.enabled) {
       scheduleNext(15000);
       return;
@@ -999,22 +1000,43 @@ export function saveUiPrefs(payload) {
   };
 }
 
+const bundleFileCache = new Map();
+let cachedBootPayloadBaseJson = '';
+
+function readCachedBundleFile(filePath, sig, reader) {
+  const prev = bundleFileCache.get(filePath);
+  if (prev && prev.sig === sig) return prev.value;
+  const value = reader(filePath);
+  bundleFileCache.set(filePath, { sig, value });
+  return value;
+}
+
 function rebuildBundleIfNeeded() {
   const userConfigFile = path.join(USER_DIR, 'config.json');
   const userCssFile = path.join(USER_DIR, 'custom.css');
   const userJsFile = path.join(USER_DIR, 'custom.js');
   const userI18nFile = path.join(USER_DIR, 'i18n.override.json');
 
+  const pkgSig = statSig(PKG_FILE);
+  const baseCssSig = statSig(CORE_BASE_CSS_FILE);
+  const coreI18nSig = statSig(CORE_I18N_FILE);
+  const runtimeSig = statSig(CORE_RUNTIME_FILE);
+  const userConfigSig = statSig(userConfigFile);
+  const uiPrefsSig = statSig(UI_PREFS_FILE);
+  const userCssSig = statSig(userCssFile);
+  const userJsSig = statSig(userJsFile);
+  const userI18nSig = statSig(userI18nFile);
+
   const filesSig = [
-    statSig(PKG_FILE),
-    statSig(CORE_BASE_CSS_FILE),
-    statSig(CORE_I18N_FILE),
-    statSig(CORE_RUNTIME_FILE),
-    statSig(userConfigFile),
-    statSig(UI_PREFS_FILE),
-    statSig(userCssFile),
-    statSig(userJsFile),
-    statSig(userI18nFile)
+    pkgSig,
+    baseCssSig,
+    coreI18nSig,
+    runtimeSig,
+    userConfigSig,
+    uiPrefsSig,
+    userCssSig,
+    userJsSig,
+    userI18nSig
   ].join('|');
 
   const endpoints = discoverEndpoints();
@@ -1025,10 +1047,10 @@ function rebuildBundleIfNeeded() {
   }
   lastBundleFilesSig = filesSig;
 
-  const pkg = readJsonOrFallback(PKG_FILE, {});
+  const pkg = readCachedBundleFile(PKG_FILE, pkgSig, (p) => readJsonOrFallback(p, {}));
   cachedVersion = pkg?.version ? `anti-claude-${pkg.version}` : 'anti-claude-3.0.2';
 
-  const diskCfg = readJsonOrFallback(userConfigFile, {});
+  const diskCfg = readCachedBundleFile(userConfigFile, userConfigSig, (p) => readJsonOrFallback(p, {}));
   const rawCfg = resolveEffectiveUserConfig(userConfigFile, diskCfg);
   const enabled = rawCfg?.enabled !== false;
   const modules = Object.assign(
@@ -1044,15 +1066,15 @@ function rebuildBundleIfNeeded() {
   const themeVars = rawCfg?.themeVars && typeof rawCfg.themeVars === 'object' ? rawCfg.themeVars : {};
   const darkThemeVars = rawCfg?.darkThemeVars && typeof rawCfg.darkThemeVars === 'object' ? rawCfg.darkThemeVars : {};
 
-  const coreDict = readJsonOrFallback(CORE_I18N_FILE, {});
-  const overrideDict = readJsonOrFallback(userI18nFile, {});
+  const coreDict = readCachedBundleFile(CORE_I18N_FILE, coreI18nSig, (p) => readJsonOrFallback(p, {}));
+  const overrideDict = readCachedBundleFile(userI18nFile, userI18nSig, (p) => readJsonOrFallback(p, {}));
   const mergedDict = Object.assign({}, coreDict, overrideDict);
   delete mergedDict._comment;
 
-  const baseCss = readTextOrEmpty(CORE_BASE_CSS_FILE);
-  const customCss = readTextOrEmpty(userCssFile);
-  const customJs = readTextOrEmpty(userJsFile);
-  cachedRuntimeTemplate = readTextOrEmpty(CORE_RUNTIME_FILE);
+  const baseCss = readCachedBundleFile(CORE_BASE_CSS_FILE, baseCssSig, readTextOrEmpty);
+  const customCss = readCachedBundleFile(userCssFile, userCssSig, readTextOrEmpty);
+  const customJs = readCachedBundleFile(userJsFile, userJsSig, readTextOrEmpty);
+  cachedRuntimeTemplate = readCachedBundleFile(CORE_RUNTIME_FILE, runtimeSig, readTextOrEmpty);
 
   activeConfig = {
     enabled,
@@ -1076,9 +1098,10 @@ function rebuildBundleIfNeeded() {
     dict: mergedDict
   };
 
+  cachedBootPayloadBaseJson = JSON.stringify(cachedBootPayloadBase);
   cachedBundleHash = crypto
     .createHash('sha1')
-    .update(JSON.stringify(cachedBootPayloadBase))
+    .update(cachedBootPayloadBaseJson)
     .update(cachedRuntimeTemplate)
     .digest('hex')
     .slice(0, 12);
@@ -1088,12 +1111,15 @@ function rebuildBundleIfNeeded() {
 
 function buildRuntimeScript(hostThemeMode = null, rpcToken = '', rpcSessionId = '') {
   if (!cachedRuntimeTemplate || !cachedBootPayloadBase) return '';
-  const extra = {};
-  if (hostThemeMode) extra.hostThemeMode = hostThemeMode;
-  if (rpcToken) extra.rpcToken = rpcToken;
-  if (rpcSessionId) extra.rpcSessionId = rpcSessionId;
-  const payload = Object.keys(extra).length > 0 ? Object.assign({}, cachedBootPayloadBase, extra) : cachedBootPayloadBase;
-  return cachedRuntimeTemplate.replace('(__AG_BOOT_PAYLOAD__);', () => `(${JSON.stringify(payload)});`);
+  const extraParts = [];
+  if (hostThemeMode) extraParts.push(`"hostThemeMode":${JSON.stringify(hostThemeMode)}`);
+  if (rpcToken) extraParts.push(`"rpcToken":${JSON.stringify(rpcToken)}`);
+  if (rpcSessionId) extraParts.push(`"rpcSessionId":${JSON.stringify(rpcSessionId)}`);
+  const payloadJson =
+    extraParts.length > 0 && cachedBootPayloadBaseJson.endsWith('}')
+      ? `${cachedBootPayloadBaseJson.slice(0, -1)},${extraParts.join(',')}}`
+      : cachedBootPayloadBaseJson || JSON.stringify(cachedBootPayloadBase);
+  return cachedRuntimeTemplate.replace('(__AG_BOOT_PAYLOAD__);', () => `(${payloadJson});`);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1276,7 +1302,7 @@ function getDescendantIds(cascadeId, conversationsDir) {
   if (!DatabaseSync || !conversationsDir) return [];
   let dirState = lineageCacheByDir.get(conversationsDir);
   if (!dirState) {
-    dirState = { dirMtimeMs: -1, nodes: new Map() };
+    dirState = { dirMtimeMs: -1, nodes: new Map(), byParent: new Map(), byRoot: new Map(), indexDirty: true };
     lineageCacheByDir.set(conversationsDir, dirState);
   }
   const st = fs.statSync(conversationsDir, { throwIfNoEntry: false });
@@ -1291,6 +1317,7 @@ function getDescendantIds(cascadeId, conversationsDir) {
     }
     const seen = new Set();
     let opens = 0;
+    let mutated = false;
     for (const name of entries) {
       const m = name.match(DB_FILE_RE);
       if (!m) continue;
@@ -1303,6 +1330,7 @@ function getDescendantIds(cascadeId, conversationsDir) {
       if (!info || (existing && existing.sig === info.sig)) continue;
       if (opens >= 20) continue;
       opens += 1;
+      mutated = true;
       try {
         const metaRes = withReadOnlyDb(dbPath, 20, (db) => {
           const row = db.prepare('SELECT data FROM trajectory_metadata_blob LIMIT 1').get();
@@ -1320,24 +1348,45 @@ function getDescendantIds(cascadeId, conversationsDir) {
       }
     }
     for (const id of Array.from(dirState.nodes.keys())) {
-      if (!seen.has(id)) dirState.nodes.delete(id);
+      if (!seen.has(id)) {
+        dirState.nodes.delete(id);
+        mutated = true;
+      }
     }
+    if (mutated) dirState.indexDirty = true;
     if (opens < 20) dirState.dirMtimeMs = st.mtimeMs;
   }
 
-  const byParent = new Map();
-  const direct = new Set();
-  for (const [uuid, node] of dirState.nodes.entries()) {
-    if (node.parentId) {
-      let s = byParent.get(node.parentId);
-      if (!s) {
-        s = new Set();
-        byParent.set(node.parentId, s);
+  if (dirState.indexDirty) {
+    const byParent = new Map();
+    const byRoot = new Map();
+    for (const [uuid, node] of dirState.nodes.entries()) {
+      if (node.parentId) {
+        let s = byParent.get(node.parentId);
+        if (!s) {
+          s = new Set();
+          byParent.set(node.parentId, s);
+        }
+        s.add(uuid);
       }
-      s.add(uuid);
+      if (node.rootId) {
+        let r = byRoot.get(node.rootId);
+        if (!r) {
+          r = new Set();
+          byRoot.set(node.rootId, r);
+        }
+        r.add(uuid);
+      }
     }
-    if (node.rootId === cascadeId && uuid !== cascadeId) direct.add(uuid);
+    dirState.byParent = byParent;
+    dirState.byRoot = byRoot;
+    dirState.indexDirty = false;
   }
+
+  const byParent = dirState.byParent;
+  const direct = new Set();
+  const rSet = dirState.byRoot.get(cascadeId);
+  if (rSet) for (const id of rSet) if (id !== cascadeId) direct.add(id);
   const pSet = byParent.get(cascadeId);
   if (pSet) for (const id of pSet) if (id !== cascadeId) direct.add(id);
 
@@ -1489,8 +1538,10 @@ function parseConversationMetrics(cascadeId, conversationsDir) {
     let childIn = 0;
     let childCache = 0;
     let childOut = 0;
+    const childMetricsById = new Map();
     for (const cid of descendantIds) {
       const cm = readChildMetrics(cid, conversationsDir);
+      if (cm) childMetricsById.set(cid, cm);
       if (!cm?.hasData) continue;
       childCount += 1;
       childCalls += cm.calls;
@@ -1578,7 +1629,7 @@ function parseConversationMetrics(cascadeId, conversationsDir) {
 
     const subSummaryMap = new Map(readSubagentSummaries(descendantIds, conversationsDir).map((s) => [s.id, s]));
     const children = descendantIds.slice(0, 24).map((cid) => {
-      const cm = readChildMetrics(cid, conversationsDir);
+      const cm = childMetricsById.get(cid) || null;
       const sm = subSummaryMap.get(cid);
       return {
         id: cid,
@@ -1651,7 +1702,10 @@ function resolveRealPathBestEffort(absPath) {
   return resolved;
 }
 
+let cachedBlockedSystemPrefixes = null;
+
 function getBlockedSystemPrefixes() {
+  if (cachedBlockedSystemPrefixes) return cachedBlockedSystemPrefixes;
   const resolvedHome = path.resolve(HOME);
   const realHome = resolveRealPathBestEffort(resolvedHome);
   const homes = resolvedHome === realHome ? [resolvedHome] : [resolvedHome, realHome];
@@ -1685,6 +1739,7 @@ function getBlockedSystemPrefixes() {
       path.join(h, 'Library', 'Keychains')
     );
   }
+  cachedBlockedSystemPrefixes = prefixes;
   return prefixes;
 }
 
@@ -1886,7 +1941,7 @@ function splitAgentsMdDocument(agentsText, rawMeta) {
   return { bodyText, outsideText, hasManagedBlock };
 }
 
-function readProjectContext(rawDir) {
+function readProjectContext(rawDir, sidecarsSnapshot = null) {
   const dirPath = resolveLocalProjectDir(rawDir);
   if (!dirPath) return { ok: false, error: 'invalid_directory' };
 
@@ -1945,7 +2000,7 @@ function readProjectContext(rawDir) {
     });
   }
 
-  const scheduledTasks = readProjectScheduledTasks(dirPath, rawMeta, extraFolders);
+  const scheduledTasks = readProjectScheduledTasks(dirPath, rawMeta, extraFolders, sidecarsSnapshot);
 
   return {
     ok: true,
@@ -2289,7 +2344,29 @@ function parseScheduleCronExpr(rawExpr) {
   return { frequency: 'custom', time: '09:00', dayOfWeek: 1, minute: 0, customCron: expr, timezone };
 }
 
-function readProjectScheduledTasks(dirPath, rawMeta, extraFolders = []) {
+function readNativeScheduleSidecarsSnapshot() {
+  const items = [];
+  try {
+    if (!fs.existsSync(SIDECARS_DIR)) return items;
+    for (const entry of fs.readdirSync(SIDECARS_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const scPath = path.join(SIDECARS_DIR, entry.name, 'sidecar.json');
+      const sc = readJsonOrFallback(scPath, null);
+      if (!sc || sc.builtin !== 'schedule' || !Array.isArray(sc.args)) continue;
+      const uris = Array.isArray(sc.agent_permissions?.workspace_uris) ? sc.agent_permissions.workspace_uris : [];
+      const dirs = uris.map(fromFileUriSafe).filter(Boolean);
+      if (!dirs.length) continue;
+      let updatedAt = 0;
+      try {
+        updatedAt = Math.floor(fs.statSync(scPath).mtimeMs);
+      } catch {}
+      items.push({ name: entry.name, sc, dirs, updatedAt });
+    }
+  } catch {}
+  return items;
+}
+
+function readProjectScheduledTasks(dirPath, rawMeta, extraFolders = [], sidecarsSnapshot = null) {
   const projectDirs = new Set([path.resolve(dirPath)]);
   for (const ef of extraFolders) {
     if (ef?.absPath) projectDirs.add(path.resolve(ef.absPath));
@@ -2337,44 +2414,36 @@ function readProjectScheduledTasks(dirPath, rawMeta, extraFolders = []) {
 
   /* Also discover native Antigravity Automations targeting this project's folders */
   try {
-    if (fs.existsSync(SIDECARS_DIR)) {
-      for (const entry of fs.readdirSync(SIDECARS_DIR, { withFileTypes: true })) {
-        if (!entry.isDirectory() || knownSidecarIds.has(entry.name)) continue;
-        const scPath = path.join(SIDECARS_DIR, entry.name, 'sidecar.json');
-        const sc = readJsonOrFallback(scPath, null);
-        if (!sc || sc.builtin !== 'schedule' || !Array.isArray(sc.args)) continue;
-        const uris = Array.isArray(sc.agent_permissions?.workspace_uris) ? sc.agent_permissions.workspace_uris : [];
-        const matchedDir = uris.map(fromFileUriSafe).find((p) => p && projectDirs.has(p));
-        if (!matchedDir) continue;
-        const parsed = parseScheduleCronExpr(sc.args[0]);
-        const sepIdx = sc.args.indexOf('--');
-        const instructions = sepIdx !== -1 && sc.args[sepIdx + 1] ? String(sc.args[sepIdx + 1]) : '';
-        const modelArg = sc.args.find((a) => typeof a === 'string' && a.startsWith('--model='));
-        const model = modelArg ? modelArg.slice('--model='.length) : '';
-        let updatedAt = 0;
-        try {
-          updatedAt = Math.floor(fs.statSync(scPath).mtimeMs);
-        } catch {}
-        tasks.push({
-          id: `sidecar:${entry.name}`,
-          name: String(sc.display_name || entry.name),
-          description: String(sc.description || ''),
-          instructions,
-          folderPath: matchedDir,
-          model,
-          frequency: parsed.frequency,
-          time: parsed.time,
-          dayOfWeek: parsed.dayOfWeek,
-          minute: parsed.minute,
-          customCron: parsed.customCron,
-          timezone: parsed.timezone,
-          cron: String(sc.args[0] || ''),
-          sidecarId: entry.name,
-          syncedSidecar: true,
-          externalSidecar: true,
-          updatedAt
-        });
-      }
+    const sidecars = Array.isArray(sidecarsSnapshot) ? sidecarsSnapshot : readNativeScheduleSidecarsSnapshot();
+    for (const item of sidecars) {
+      if (knownSidecarIds.has(item.name)) continue;
+      const matchedDir = item.dirs.find((p) => projectDirs.has(p));
+      if (!matchedDir) continue;
+      const sc = item.sc;
+      const parsed = parseScheduleCronExpr(sc.args[0]);
+      const sepIdx = sc.args.indexOf('--');
+      const instructions = sepIdx !== -1 && sc.args[sepIdx + 1] ? String(sc.args[sepIdx + 1]) : '';
+      const modelArg = sc.args.find((a) => typeof a === 'string' && a.startsWith('--model='));
+      const model = modelArg ? modelArg.slice('--model='.length) : '';
+      tasks.push({
+        id: `sidecar:${item.name}`,
+        name: String(sc.display_name || item.name),
+        description: String(sc.description || ''),
+        instructions,
+        folderPath: matchedDir,
+        model,
+        frequency: parsed.frequency,
+        time: parsed.time,
+        dayOfWeek: parsed.dayOfWeek,
+        minute: parsed.minute,
+        customCron: parsed.customCron,
+        timezone: parsed.timezone,
+        cron: String(sc.args[0] || ''),
+        sidecarId: item.name,
+        syncedSidecar: true,
+        externalSidecar: true,
+        updatedAt: item.updatedAt
+      });
     }
   } catch {}
 
@@ -2952,10 +3021,7 @@ export async function readOverviewGitStatusAsync(absDir) {
   const task = (async () => {
     let git = null;
     try {
-      const [statusOut, headNumstat] = await Promise.all([
-        execGitAsync(absDir, ['status', '--porcelain=v2', '--branch'], 1200),
-        execGitAsync(absDir, ['diff', 'HEAD', '--numstat'], 1200)
-      ]);
+      const statusOut = await execGitAsync(absDir, ['status', '--porcelain=v2', '--branch'], 1200);
       if (statusOut !== null) {
         let branch = '';
         let changedFiles = 0;
@@ -2969,17 +3035,21 @@ export async function readOverviewGitStatusAsync(absDir) {
           }
         }
         if (branch) {
-          let numstatText = headNumstat;
-          if (numstatText === null && changedFiles > 0) {
-            /* Unborn branch without HEAD commit: fall back to unstaged + cached numstat */
-            const [unstaged, staged] = await Promise.all([
-              execGitAsync(absDir, ['diff', '--numstat'], 1000),
-              execGitAsync(absDir, ['diff', '--cached', '--numstat'], 1000)
-            ]);
-            numstatText = `${unstaged || ''}\n${staged || ''}`;
+          if (changedFiles === 0) {
+            git = { branch, added: 0, deleted: 0, changedFiles: 0 };
+          } else {
+            let numstatText = await execGitAsync(absDir, ['diff', 'HEAD', '--numstat'], 1200);
+            if (numstatText === null) {
+              /* Unborn branch without HEAD commit: fall back to unstaged + cached numstat */
+              const [unstaged, staged] = await Promise.all([
+                execGitAsync(absDir, ['diff', '--numstat'], 1000),
+                execGitAsync(absDir, ['diff', '--cached', '--numstat'], 1000)
+              ]);
+              numstatText = `${unstaged || ''}\n${staged || ''}`;
+            }
+            const { added, deleted } = parseNumstatOutput(numstatText);
+            git = { branch, added, deleted, changedFiles };
           }
-          const { added, deleted } = parseNumstatOutput(numstatText);
-          git = { branch, added, deleted, changedFiles };
         }
       }
     } catch {
@@ -3244,9 +3314,10 @@ async function handleProjectRpcRequest(rawPayload, callerEntry = null) {
     if (action === 'listContexts') {
       const paths = Array.isArray(payload.paths) ? payload.paths.slice(0, 80) : [];
       const projectIds = Array.isArray(payload.projectIds) ? payload.projectIds.slice(0, 120) : [];
+      const sidecarsSnapshot = paths.length > 0 ? readNativeScheduleSidecarsSnapshot() : [];
       const contexts = {};
       for (const raw of paths) {
-        const res = readProjectContext(raw);
+        const res = readProjectContext(raw, sidecarsSnapshot);
         if (res.ok) contexts[raw] = res;
       }
       const projectMtimes = {};
@@ -3688,9 +3759,17 @@ export async function attachTarget(page, endpoint, opts = {}) {
   };
 
   ws.addEventListener('message', (ev) => {
+    const raw = ev.data;
+    if (
+      typeof raw === 'string' &&
+      raw.includes('"method":"Runtime.consoleAPICalled"') &&
+      !raw.includes('"id":')
+    ) {
+      return;
+    }
     let msg;
     try {
-      msg = JSON.parse(ev.data);
+      msg = JSON.parse(raw);
     } catch {
       return;
     }
@@ -4138,7 +4217,19 @@ if (isMainModule) {
   } else {
     rebuildBundleIfNeeded();
     console.log(`[Anti-Claude Daemon] Started (${cachedVersion}) | userDir=${USER_DIR} | sqlite=${Boolean(DatabaseSync)}`);
-    await sync();
-    setInterval(sync, 2500);
+    let idleSyncStreak = 0;
+    const runSyncLoop = async () => {
+      try {
+        await sync();
+      } catch {}
+      if (attachedTargets.size > 0 || lastReachablePort) {
+        idleSyncStreak = 0;
+      } else {
+        idleSyncStreak = Math.min(idleSyncStreak + 1, 6);
+      }
+      const nextDelay = idleSyncStreak <= 2 ? 2500 : idleSyncStreak <= 4 ? 5000 : 8000;
+      setTimeout(runSyncLoop, nextDelay);
+    };
+    await runSyncLoop();
   }
 }

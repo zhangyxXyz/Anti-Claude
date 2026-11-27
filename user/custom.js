@@ -493,6 +493,7 @@ div.items-center > div[style*="--max-conversation-width"],
     const keepPolling = activeCount > 0;
     if (keepPolling && !timerIntervalId) {
       timerIntervalId = setInterval(() => {
+        if (document.hidden) return;
         const ps = collectPanes();
         syncRunningToolIndicators(ps);
       }, 450);
@@ -570,6 +571,8 @@ div.items-center > div[style*="--max-conversation-width"],
         if ((fol.nodeValue || '').length > 0) {
           pill.setAttribute('data-ag-pill-done', '1');
         }
+      } else if (fol && fol.nodeType === 1) {
+        pill.setAttribute('data-ag-pill-done', '1');
       }
     }
   }
@@ -1292,6 +1295,7 @@ div.items-center > div[style*="--max-conversation-width"],
     }
     if (FEAT.contextRing) {
       updateComposerRingVisuals();
+      ensureMetricsPillHoverBound();
       if (quotaPopoverOpen) renderQuotaPopoverBody();
     }
     if (FEAT.overviewPanel) renderOverviewPanel(false);
@@ -1700,25 +1704,36 @@ div.items-center > div[style*="--max-conversation-width"],
 
   const onMetricsPillMouseEnter = (e) => {
     if (disposed || !FEAT.contextRing) return;
-    const pill = e.target && e.target.closest && e.target.closest('#ag-live-metrics-pill');
+    const pill = e.currentTarget || (e.target && e.target.closest && e.target.closest('#ag-live-metrics-pill'));
     if (!pill) return;
-    const syncPos = () => {
-      const tt = document.getElementById('ag-live-metrics-tooltip');
-      if (tt) positionMetricsTooltip(pill, tt);
-    };
-    syncPos();
-    queueMicrotask(syncPos);
+    const tt = document.getElementById('ag-live-metrics-tooltip');
+    if (tt) positionMetricsTooltip(pill, tt);
   };
 
-  const onMetricsPillMouseLeave = (e) => {
+  const onMetricsPillMouseLeave = () => {
     if (disposed) return;
-    const pill = e.target && e.target.closest && e.target.closest('#ag-live-metrics-pill');
-    if (!pill) return;
     const tt = document.getElementById('ag-live-metrics-tooltip');
     if (tt && tt.getAttribute('data-ag-pinned') === '1') {
       tt.setAttribute('data-visible', '1');
     }
   };
+
+  const boundMetricsPills = new Set();
+  function ensureMetricsPillHoverBound() {
+    if (disposed) return;
+    const pill = document.getElementById('ag-live-metrics-pill');
+    if (!pill || boundMetricsPills.has(pill)) return;
+    for (const stale of boundMetricsPills) {
+      if (!stale.isConnected) {
+        stale.removeEventListener('mouseenter', onMetricsPillMouseEnter);
+        stale.removeEventListener('mouseleave', onMetricsPillMouseLeave);
+        boundMetricsPills.delete(stale);
+      }
+    }
+    pill.addEventListener('mouseenter', onMetricsPillMouseEnter);
+    pill.addEventListener('mouseleave', onMetricsPillMouseLeave);
+    boundMetricsPills.add(pill);
+  }
 
   const onMetricsPillClick = (e) => {
     if (disposed || !FEAT.contextRing) return;
@@ -1745,14 +1760,14 @@ div.items-center > div[style*="--max-conversation-width"],
     }
   };
 
-  document.addEventListener('mouseenter', onMetricsPillMouseEnter, true);
-  document.addEventListener('mouseleave', onMetricsPillMouseLeave, true);
+  ensureMetricsPillHoverBound();
   document.addEventListener('click', onMetricsPillClick, true);
 
   /* Wrapped lazily (retried every sync) so load order vs. the upstream runtime does not matter.
      A stale wrapper left by an older instance is unwrapped first; after dispose or feature toggle-off ours restores original HTML. */
   let ownMetricsWrapper = null;
   function ensureMetricsWrapped() {
+    ensureMetricsPillHoverBound();
     let cur = window.__ag_render_metrics;
     if (typeof cur !== 'function' || cur === ownMetricsWrapper) return;
     while (cur && cur.__agSlimWrapped && typeof cur.__agOrig === 'function') cur = cur.__agOrig;
@@ -1779,6 +1794,7 @@ div.items-center > div[style*="--max-conversation-width"],
         window.__ag_last_metrics.__agOrigTooltipHtml = payload.tooltipHtml;
       }
       updateComposerRingVisuals();
+      ensureMetricsPillHoverBound();
       if (quotaPopoverOpen) renderQuotaPopoverBody();
       if (FEAT.overviewPanel) renderOverviewPanel(false);
       if (payload && payload.hasData && payload.stats) {
@@ -5245,18 +5261,18 @@ div.items-center > div[style*="--max-conversation-width"],
       sidebarRight: sbRect && sbRect.width > 0 ? sbRect.right : rowRect.right || 256
     };
   };
-  const onPinnedRowPointerMove = (ev) => {
+  const flushPinnedRowPointerMove = () => {
     if (!pinnedDragState || disposed) return;
-    if (ev.altKey) {
+    pinnedDragState.moveRaf = 0;
+    const clientX = pinnedDragState.pendingX;
+    const clientY = pinnedDragState.pendingY;
+    if (pinnedDragState.pendingAlt) {
       clearPinnedComposerDropHighlights();
       return;
     }
-    const dx = ev.clientX - pinnedDragState.startX;
-    const dy = ev.clientY - pinnedDragState.startY;
-    if (!pinnedDragState.active && dx * dx + dy * dy < 49) return;
-    pinnedDragState.active = true;
-    updatePinnedDragGhost(pinnedDragState, ev.clientX, ev.clientY);
-    const hit = findComposerUnderPoint(ev.clientX, ev.clientY);
+    /* Read layout rects before mutating ghost / drop attributes to avoid layout thrashing */
+    const hit = findComposerUnderPoint(clientX, clientY);
+    updatePinnedDragGhost(pinnedDragState, clientX, clientY);
     if (!hit) {
       clearPinnedDropZoneHighlightOnly();
       return;
@@ -5276,15 +5292,11 @@ div.items-center > div[style*="--max-conversation-width"],
         setPinnedChatDragOverTarget(targetCid);
         const store = getLayoutReduxStore();
         if (store) {
-          frame(() => {
-            if (pinnedDragState && pinnedDragOverCid === targetCid) {
-              try {
-                if (store.getState && store.getState().layout && store.getState().layout.pendingSplitDrop) {
-                  store.dispatch({ type: 'layout/setPendingSplitDrop', payload: null });
-                }
-              } catch {}
+          try {
+            if (store.getState && store.getState().layout && store.getState().layout.pendingSplitDrop) {
+              store.dispatch({ type: 'layout/setPendingSplitDrop', payload: null });
             }
-          });
+          } catch {}
         }
       } else {
         setPinnedChatDragOverTarget(null);
@@ -5292,9 +5304,28 @@ div.items-center > div[style*="--max-conversation-width"],
       }
     }
   };
+  const onPinnedRowPointerMove = (ev) => {
+    if (!pinnedDragState || disposed) return;
+    if (!pinnedDragState.active) {
+      const dx = ev.clientX - pinnedDragState.startX;
+      const dy = ev.clientY - pinnedDragState.startY;
+      if (dx * dx + dy * dy < 49) return;
+      pinnedDragState.active = true;
+    }
+    pinnedDragState.pendingX = ev.clientX;
+    pinnedDragState.pendingY = ev.clientY;
+    pinnedDragState.pendingAlt = ev.altKey;
+    if (!pinnedDragState.moveRaf) {
+      pinnedDragState.moveRaf = requestAnimationFrame(flushPinnedRowPointerMove);
+    }
+  };
   const onPinnedRowPointerUp = (ev) => {
     if (!pinnedDragState) return;
     const st = pinnedDragState;
+    if (st.moveRaf) {
+      cancelAnimationFrame(st.moveRaf);
+      st.moveRaf = 0;
+    }
     pinnedDragState = null;
     clearPinnedComposerDropHighlights();
     if (!st.active || disposed || ev.altKey) return;
@@ -5360,6 +5391,10 @@ div.items-center > div[style*="--max-conversation-width"],
   };
   const onPinnedRowPointerCancel = () => {
     if (dispatchingSyntheticPointerCancel) return;
+    if (pinnedDragState && pinnedDragState.moveRaf) {
+      cancelAnimationFrame(pinnedDragState.moveRaf);
+      pinnedDragState.moveRaf = 0;
+    }
     pinnedDragState = null;
     clearPinnedComposerDropHighlights();
   };
@@ -5549,7 +5584,9 @@ div.items-center > div[style*="--max-conversation-width"],
         if (p && Array.isArray(p.sidebarGroups) && !groupsById.size) {
           for (const g of p.sidebarGroups) {
             if (g && g.id) {
-              groupsById.set(g.id, g.conversationIds || []);
+              const prev = groupsById.get(g.id);
+              const nextIds = g.conversationIds || [];
+              groupsById.set(g.id, prev && prev.length ? prev.concat(nextIds) : nextIds.slice());
               if (g.label || g.name) projectLabels.set(g.id, g.label || g.name);
             }
           }
@@ -5560,7 +5597,9 @@ div.items-center > div[style*="--max-conversation-width"],
             if (Array.isArray(v) && v.length && v[0] && Array.isArray(v[0].conversationIds)) {
               for (const g of v) {
                 if (g && g.id) {
-                  groupsById.set(g.id, g.conversationIds || []);
+                  const prev = groupsById.get(g.id);
+                  const nextIds = g.conversationIds || [];
+                  groupsById.set(g.id, prev && prev.length ? prev.concat(nextIds) : nextIds.slice());
                   const lbl = g.label || g.name || g.title;
                   if (lbl) projectLabels.set(g.id, lbl);
                 }
@@ -6337,7 +6376,7 @@ div.items-center > div[style*="--max-conversation-width"],
     if (disposed) return;
     restoreLegacySidebarCjkNodes();
     const unifiedRecentsOn = Boolean(FEAT.hideSidebarProjects);
-    if (!FEAT.folderStatus && !FEAT.recentSection && !unifiedRecentsOn) {
+    if (!FEAT.folderStatus && !FEAT.recentSection && !unifiedRecentsOn && !FEAT.chatWorkSplit) {
       if (sidebarStoreUnsub) {
         sidebarStoreUnsub();
         sidebarStoreUnsub = null;
@@ -6369,6 +6408,7 @@ div.items-center > div[style*="--max-conversation-width"],
     const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
     syncFolderStatusBadges(bindings, state, activeId, hasFocus);
     syncRecentSection(bindings, state, activeId, hasFocus);
+    syncChatWorkTabBadges(bindings, state, activeId, hasFocus);
   }
 
   const onWindowSidebarEvent = () => scheduleSidebarSync();
@@ -6666,10 +6706,10 @@ div.items-center > div[style*="--max-conversation-width"],
       }
     };
     try {
-      const translateText = (node) => {
+      const translateText = (node, skipExcludeCheck = false) => {
         if (!node || node.nodeType !== 3) return;
         const p = node.parentElement;
-        if (!p || isExcluded(p)) return;
+        if (!p || (!skipExcludeCheck && isExcluded(p))) return;
         const cur = node.nodeValue;
         if (!cur) return;
         const rec = origMap.get(node);
@@ -6690,9 +6730,23 @@ div.items-center > div[style*="--max-conversation-width"],
         return;
       }
       if (root.nodeType === 1 && isExcluded(root)) return;
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode(n) {
+          if (n.nodeType === 1) {
+            if (n !== root && n.matches) {
+              try {
+                if (n.matches(exclSel)) return NodeFilter.FILTER_REJECT;
+              } catch {
+                if (n.matches(UX_I18N_BASE_EXCLUDE)) return NodeFilter.FILTER_REJECT;
+              }
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
       let node;
-      while ((node = walker.nextNode())) translateText(node);
+      while ((node = walker.nextNode())) translateText(node, true);
 
       const attrTargets = [];
       if (root.nodeType === 1 && root.matches && root.matches('[title], [placeholder], [aria-label]')) {
@@ -6734,7 +6788,7 @@ div.items-center > div[style*="--max-conversation-width"],
       uxI18nObserver = null;
     }
     if (uxI18nFlushTimer) {
-      cancelLater(uxI18nFlushTimer);
+      cancelAnimationFrame(uxI18nFlushTimer);
       uxI18nFlushTimer = 0;
     }
     uxI18nDirtyRoots.clear();
@@ -6758,27 +6812,21 @@ div.items-center > div[style*="--max-conversation-width"],
     if (document.body) {
       uxTranslateSubtree(document.body);
       if (!uxI18nObserver && typeof MutationObserver !== 'undefined') {
-        uxI18nObserver = new MutationObserver((mutations) => {
-          if (disposed || !FEAT.i18n) return;
-          const roots = new Set();
-          for (const m of mutations) {
-            if (m.type === 'characterData' && m.target) {
-              roots.add(m.target);
-            } else if (m.type === 'childList') {
-              for (const n of m.addedNodes) {
-                if (n.nodeType === 1 || n.nodeType === 3) roots.add(n);
-              }
-            } else if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
-              roots.add(m.target);
-            }
+        const flushUxI18nDirty = () => {
+          uxI18nFlushTimer = 0;
+          if (disposed || !FEAT.i18n || !uxI18nDirtyRoots.size) {
+            uxI18nDirtyRoots.clear();
+            return;
           }
-          if (!roots.size) return;
+          const roots = Array.from(uxI18nDirtyRoots);
+          const rootSet = new Set(roots);
+          uxI18nDirtyRoots.clear();
           for (const r of roots) {
             if (!r || !r.isConnected) continue;
             let covered = false;
             let p = r.parentElement;
             while (p && p !== document.body) {
-              if (roots.has(p)) {
+              if (rootSet.has(p)) {
                 covered = true;
                 break;
               }
@@ -6787,6 +6835,29 @@ div.items-center > div[style*="--max-conversation-width"],
             if (!covered) uxTranslateSubtree(r);
           }
           if (uxI18nObserver) uxI18nObserver.takeRecords();
+        };
+        uxI18nObserver = new MutationObserver((mutations) => {
+          if (disposed || !FEAT.i18n) return;
+          const exclSel = getUxI18nExcludeSelector();
+          for (const m of mutations) {
+            if (m.type === 'characterData' && m.target) {
+              const p = m.target.parentElement;
+              if (!p) continue;
+              try {
+                if (p.closest(exclSel)) continue;
+              } catch {}
+              uxI18nDirtyRoots.add(m.target);
+            } else if (m.type === 'childList') {
+              for (const n of m.addedNodes) {
+                if (n.nodeType === 1 || n.nodeType === 3) uxI18nDirtyRoots.add(n);
+              }
+            } else if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
+              uxI18nDirtyRoots.add(m.target);
+            }
+          }
+          if (uxI18nDirtyRoots.size && !uxI18nFlushTimer) {
+            uxI18nFlushTimer = requestAnimationFrame(flushUxI18nDirty);
+          }
         });
         uxI18nObserver.observe(document.body, {
           childList: true,
@@ -12324,6 +12395,80 @@ div.items-center > div[style*="--max-conversation-width"],
       });
     }
     syncChatWorkSidebarRows();
+    const b = findSidebarBindings();
+    if (b && b.store) {
+      const st = b.store.getState();
+      syncChatWorkTabBadges(
+        b,
+        st,
+        getActiveCascadeId(),
+        typeof document.hasFocus === 'function' ? document.hasFocus() : true
+      );
+    }
+  }
+
+  function syncChatWorkTabBadges(bindings, state, activeId, hasFocus) {
+    const sw = document.getElementById('ag-cw-switch');
+    if (!sw || !FEAT.chatWorkSplit || !bindings || !state) return;
+    const summaries = (state.trajectorySummaries && state.trajectorySummaries.summaries) || {};
+    const stats = {
+      chat: { running: 0, pending: 0, unread: 0 },
+      work: { running: 0, pending: 0, unread: 0 }
+    };
+    const seen = new Set();
+    for (const [gid, convIds] of bindings.groupsById.entries()) {
+      if (!Array.isArray(convIds) || !convIds.length) continue;
+      const bucket = gid === 'outside-of-project' ? stats.chat : stats.work;
+      for (const cid of convIds) {
+        if (!cid || seen.has(cid)) continue;
+        seen.add(cid);
+        const cls = classifySidebarConversation(cid, summaries[cid], state, activeId, hasFocus);
+        if (!cls) continue;
+        if (cls.kind === 'running') bucket.running += 1;
+        else if (cls.kind === 'pending') bucket.pending += 1;
+        else if (cls.kind === 'unread') bucket.unread += 1;
+      }
+    }
+
+    for (const mode of ['chat', 'work']) {
+      const btn = sw.querySelector(`[data-ag-cw-tab="${mode}"]`);
+      if (!btn) continue;
+      let badge = btn.querySelector('.ag-cw-tab-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'ag-cw-tab-badge';
+        badge.setAttribute('aria-hidden', 'true');
+        btn.appendChild(badge);
+      }
+      const isInactive = mode !== currentCwMode;
+      const s = stats[mode];
+      const showRunning = isInactive && s.running > 0;
+      const showPending = isInactive && s.pending > 0;
+      const showUnread = isInactive && s.unread > 0;
+      const sig = `${showRunning ? 1 : 0}:${showPending ? 1 : 0}:${showUnread ? 1 : 0}:${s.running}:${s.pending}:${s.unread}:${FEAT.i18n ? 1 : 0}`;
+      if (badge.dataset.sig === sig) continue;
+      badge.dataset.sig = sig;
+
+      if (!showRunning && !showPending && !showUnread) {
+        badge.innerHTML = '';
+        badge.removeAttribute('data-active');
+        btn.removeAttribute('title');
+        continue;
+      }
+
+      let html = '';
+      if (showRunning) html += '<span class="ag-cw-four-dot"><i></i><i></i><i></i><i></i></span>';
+      if (showPending) html += '<span class="ag-cw-dot-corner ag-cw-dot-pending"></span>';
+      else if (showUnread) html += '<span class="ag-claude-unread-dot ag-cw-dot-corner"></span>';
+      badge.innerHTML = html;
+      badge.setAttribute('data-active', '1');
+
+      const parts = [];
+      if (s.running > 0) parts.push(FEAT.i18n ? `${s.running} 个运行中` : `${s.running} running`);
+      if (s.pending > 0) parts.push(FEAT.i18n ? `${s.pending} 个待处理` : `${s.pending} pending`);
+      if (s.unread > 0) parts.push(FEAT.i18n ? `${s.unread} 个未读` : `${s.unread} unread`);
+      btn.setAttribute('title', parts.join(' · '));
+    }
   }
 
   const CW_CHAT_SEC_RE = /^(对话|conversations|chats)$/i;
@@ -12352,9 +12497,16 @@ div.items-center > div[style*="--max-conversation-width"],
       }
       cwListObservedTarget = list;
       cwRowsDirty = true;
+      let cwSyncRafPending = false;
       cwListObserver = new MutationObserver(() => {
         cwRowsDirty = true;
-        if (!disposed && FEAT.chatWorkSplit) frame(() => syncChatWorkSidebarRows(true));
+        if (!disposed && FEAT.chatWorkSplit && !cwSyncRafPending) {
+          cwSyncRafPending = true;
+          frame(() => {
+            cwSyncRafPending = false;
+            syncChatWorkSidebarRows(true);
+          });
+        }
       });
       cwListObserver.observe(list, {
         childList: true,
@@ -12436,8 +12588,8 @@ div.items-center > div[style*="--max-conversation-width"],
         sw.innerHTML =
           '<div class="ag-cw-track" role="tablist" aria-label="Chat / Work">' +
           '<span class="ag-cw-thumb" aria-hidden="true"></span>' +
-          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="chat" role="tab">Chat</button>' +
-          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="work" role="tab">Work</button>' +
+          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="chat" role="tab"><span class="ag-cw-tab-label">Chat</span><span class="ag-cw-tab-badge" aria-hidden="true"></span></button>' +
+          '<button type="button" class="ag-cw-tab" data-ag-cw-tab="work" role="tab"><span class="ag-cw-tab-label">Work</span><span class="ag-cw-tab-badge" aria-hidden="true"></span></button>' +
           '</div>';
         sw.querySelectorAll('[data-ag-cw-tab]').forEach((btn) => {
           btn.addEventListener('click', () => {
@@ -13078,7 +13230,7 @@ div.items-center > div[style*="--max-conversation-width"],
     const stickBottom = isScrollerAtBottom(sc);
     if (auxSidebarAnimTimer) clearTimeout(auxSidebarAnimTimer);
     if (stickBottom && sc) {
-      setTimeout(() => {
+      later(() => {
         if (!disposed && sc.isConnected) sc.scrollTop = sc.scrollHeight;
       }, 180);
     }
@@ -13402,11 +13554,15 @@ div.items-center > div[style*="--max-conversation-width"],
 
   function teardownChatFreeResizeRails() {
     chatResizeActive = null;
-    window.removeEventListener('resize', scheduleOverviewInsetCheck);
+    window.removeEventListener('resize', onWindowResizeChatSettle);
     document.removeEventListener('click', onOverviewToggleClick, true);
     document.removeEventListener('wheel', onStreamScrollWheel, true);
     document.removeEventListener('keydown', onStreamScrollKey, true);
     document.removeEventListener('click', onStreamScrollClick, true);
+    if (winResizeSettleTimer) {
+      clearTimeout(winResizeSettleTimer);
+      winResizeSettleTimer = 0;
+    }
     if (ovInsetResizeRaf) {
       cancelAnimationFrame(ovInsetResizeRaf);
       ovInsetResizeRaf = 0;
@@ -14886,7 +15042,6 @@ div.items-center > div[style*="--max-conversation-width"],
       ensureProjectsSidebarObserver();
       positionProjectsOverlay();
     }
-    syncSidebarHideNativeProjects();
   }
 
   /* ==========================================================================
@@ -16018,8 +16173,11 @@ div.items-center > div[style*="--max-conversation-width"],
     document.removeEventListener('contextmenu', onNativeContextMenuCapture, true);
     document.removeEventListener('click', onRevertButtonClick, true);
     document.removeEventListener('keydown', onInlineEditDocKeyDown, true);
-    document.removeEventListener('mouseenter', onMetricsPillMouseEnter, true);
-    document.removeEventListener('mouseleave', onMetricsPillMouseLeave, true);
+    for (const pill of boundMetricsPills) {
+      pill.removeEventListener('mouseenter', onMetricsPillMouseEnter);
+      pill.removeEventListener('mouseleave', onMetricsPillMouseLeave);
+    }
+    boundMetricsPills.clear();
     document.removeEventListener('click', onMetricsPillClick, true);
     document.removeEventListener('pointerdown', onPinnedRowPointerDown, true);
     window.removeEventListener('pointermove', onPinnedRowPointerMove, true);
