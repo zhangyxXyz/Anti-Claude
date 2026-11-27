@@ -44,7 +44,7 @@ function makeModelApi(overrides = {}) {
   return { api, modelOptions };
 }
 
-function bootDom(extraApi = {}) {
+function bootDom(extraApi = {}, modulesOverride = {}) {
   const customJsSrc = fs.readFileSync(path.join(REPO, 'user', 'custom.js'), 'utf8');
   const dom = new JSDOM(
     `<!doctype html><html><body>
@@ -61,7 +61,7 @@ function bootDom(extraApi = {}) {
   const { api } = makeModelApi(extraApi);
   const triggerBtn = doc.querySelector('button[data-testid="model-selector-trigger"]');
   triggerBtn.__reactFiber$v235 = { memoizedProps: { value: api }, return: null };
-  window.ctx = { dict: {}, modules: { i18n: true, claudeUxModelMenu: true }, onCleanup: () => {} };
+  window.ctx = { dict: {}, modules: { i18n: true, claudeUxModelMenu: true, ...modulesOverride }, onCleanup: () => {} };
   window.eval(customJsSrc);
   return { dom, window, doc, triggerBtn };
 }
@@ -121,5 +121,51 @@ test('[v2.35 orchestratorExecutors] Executor Level-3 menu renders directly from 
   } finally {
     try { window.__agClaudeUxDispose(); } catch {}
     dom.window.close();
+  }
+});
+
+test('[v2.35 tooltipNote] active-turn tooltipNote is recognized without drift dot and renders localized hint', { skip: skipDom }, async () => {
+  const note = 'Applies to /btw and messages sent after this turn';
+  const { dom, window, doc, triggerBtn } = bootDom({ tooltipNote: note }, { i18n: true });
+  try {
+    triggerBtn.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    await new Promise((r) => setTimeout(r, 30));
+
+    const mainPop = doc.getElementById('ag-claude-model-popover');
+    assert.equal(mainPop.getAttribute('data-open'), 'true');
+
+    const nativeRow = mainPop.querySelector('[data-ag-cm-native="1"]');
+    assert.ok(nativeRow, 'native menu row is present');
+    assert.equal(nativeRow.getAttribute('data-ag-cm-native-gaps'), null, 'tooltipNote must NOT trigger unknown-field drift gap');
+    assert.equal(nativeRow.querySelector('.ag-cm-dot'), null, 'native menu row must NOT show drift dot for tooltipNote');
+
+    const noteEl = mainPop.querySelector('[data-ag-cm-note="1"]');
+    assert.ok(noteEl, 'tooltipNote hint banner renders inside custom model popover');
+    assert.equal(noteEl.textContent, '将用于 /btw 及本轮之后的新消息');
+  } finally {
+    try { window.__agClaudeUxDispose(); } catch {}
+    dom.window.close();
+  }
+
+  const enRun = bootDom({ tooltipNote: note }, { i18n: false });
+  try {
+    enRun.triggerBtn.dispatchEvent(new enRun.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    await new Promise((r) => setTimeout(r, 30));
+    const noteEl = enRun.doc.querySelector('#ag-claude-model-popover [data-ag-cm-note="1"]');
+    assert.ok(noteEl, 'tooltipNote hint banner renders in English mode');
+    assert.equal(noteEl.textContent, note);
+  } finally {
+    try { enRun.window.__agClaudeUxDispose(); } catch {}
+    enRun.dom.window.close();
+  }
+
+  const idleRun = bootDom({});
+  try {
+    idleRun.triggerBtn.dispatchEvent(new idleRun.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(idleRun.doc.querySelector('#ag-claude-model-popover [data-ag-cm-note="1"]'), null, 'idle state hides note banner');
+  } finally {
+    try { idleRun.window.__agClaudeUxDispose(); } catch {}
+    idleRun.dom.window.close();
   }
 });

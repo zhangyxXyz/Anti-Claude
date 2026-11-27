@@ -741,6 +741,8 @@
   "Organizations": "组织机构",
   "Access rules": "访问规则",
   "Sends after agent finishes working": "待 Agent 完成当前任务后发送",
+  "Applies to /btw and messages sent after this turn": "将用于 /btw 及本轮之后的新消息",
+  "Applies to messages sent after this turn": "将用于本轮之后的新消息",
   "Send Now": "立即发送",
   "Cancel Generation": "停止生成",
   "Stop execution": "停止执行",

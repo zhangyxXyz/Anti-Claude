@@ -2848,7 +2848,7 @@ div.items-center > div[style*="--max-conversation-width"],
     'open', 'setIsOpen', 'customModels', 'supportsCustomModels', 'showCustomModelHeader', 'onAddCustomModel',
     'onEditCustomModel', 'bestOfNConfig', 'contextWindow', 'isModelListLoading', 'finalFocus', 'footerExtra',
     'orchestratorPick', 'children', 'groups', 'effortIndex', 'orchestratorPlanners', 'orchestratorPlannerIndex',
-    'orchestratorDefaultPlanner', 'orchestratorExecutors', 'lockedReason'
+    'orchestratorDefaultPlanner', 'orchestratorExecutors', 'lockedReason', 'tooltipNote'
   ]);
   let bypassNativeModelTriggerUntil = 0;
 
@@ -3780,8 +3780,20 @@ div.items-center > div[style*="--max-conversation-width"],
     const effDisabled = hasAdjustableEffort ? '' : ' data-disabled="true"';
     const moreSubActive = activeModelSubmenu === 'more' ? ' data-active-sub="true"' : '';
 
+    const rawTooltipNote = typeof api?.tooltipNote === 'string' ? api.tooltipNote.trim() : '';
+    const tooltipNoteText =
+      rawTooltipNote === 'Applies to /btw and messages sent after this turn'
+        ? L('将用于 /btw 及本轮之后的新消息', rawTooltipNote)
+        : rawTooltipNote === 'Applies to messages sent after this turn'
+          ? L('将用于本轮之后的新消息', rawTooltipNote)
+          : rawTooltipNote;
+    const tooltipNoteHtml = tooltipNoteText
+      ? `<div class="ag-cm-note" data-ag-cm-note="1">${escapeHtml(tooltipNoteText)}</div>`
+      : '';
+
     mainPop.innerHTML = `
       <div class="ag-cm-sec-hdr">${L('模型 · 本次会话', 'Models · This chat')}</div>
+      ${tooltipNoteHtml}
       <div>${primaryRowsHtml}</div>
       <div class="ag-cm-divider"></div>
       <button type="button" class="ag-cm-row" data-ag-cm-hover="${
@@ -8525,7 +8537,7 @@ div.items-center > div[style*="--max-conversation-width"],
     bar.style.display = 'flex';
     bar.innerHTML = activeEntries
       .map(
-        (en) => `<span class="ag-pd-mention-pill" data-ag-pd-pill-tok="${escapeHtml(en.token)}">
+        (en) => `<span class="ag-pd-mention-pill" data-ag-pd-pill-tok="${escapeHtml(en.token)}" title="${escapeHtml(en.desc || en.label)}">
           <span class="ag-pd-mention-pill-icon">${iconForMentionKind(en.kind, en.logo || '')}</span>
           <span class="ag-pd-mention-pill-lbl">${escapeHtml(en.label)}</span>
           <button type="button" class="ag-pd-mention-pill-rm" data-ag-pd-pill-rm="${escapeHtml(en.token)}" aria-label="${escapeHtml(L('移除引用', 'Remove mention'))}">×</button>
@@ -8592,6 +8604,123 @@ div.items-center > div[style*="--max-conversation-width"],
       for (let i = 0; i < dt.files.length; i++) {
         const f = dt.files[i];
         if (f && inferComposerImageMime(f)) out.push(f);
+      }
+    }
+    return out;
+  }
+
+  function resolveDroppedLocalFilePath(file) {
+    if (!file) return '';
+    const en = window.electronNative;
+    if (en && typeof en.getPathForFile === 'function') {
+      try {
+        const p = en.getPathForFile(file);
+        if (typeof p === 'string' && p.trim()) return p.trim();
+      } catch {}
+    }
+    if (typeof file.path === 'string' && file.path.trim()) return file.path.trim();
+    return '';
+  }
+
+  function buildLocalPathMentionItem(absPath, rawName = '', isDirectory = false) {
+    const cleanPath = String(absPath || '').trim();
+    if (!cleanPath) return null;
+    const uri = encodePathToFileUri(cleanPath);
+    if (!uri) return null;
+    const fallbackName = cleanPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cleanPath;
+    const label = String(rawName || '').trim() || fallbackName;
+    const kind = isDirectory ? 'directory' : 'file';
+    return {
+      kind,
+      label,
+      desc: formatShortHomePath(cleanPath),
+      scopeItem: {
+        $typeName: 'exa.codeium_common_pb.ContextScopeItem',
+        scopeItem: isDirectory
+          ? {
+              case: 'directory',
+              value: {
+                $typeName: 'exa.codeium_common_pb.DirectoryScopeItem',
+                absoluteUri: uri
+              }
+            }
+          : {
+              case: 'file',
+              value: {
+                $typeName: 'exa.codeium_common_pb.FileScopeItem',
+                absoluteUri: uri
+              }
+            }
+      }
+    };
+  }
+
+  function extractDroppedLocalFileMentions(dt, { allowUriList = true } = {}) {
+    if (!dt) return [];
+    const out = [];
+    const seenUris = new Set();
+    const pushEntry = (file, isDirectory = false) => {
+      if (!file || (!isDirectory && inferComposerImageMime(file))) return;
+      const realPath = resolveDroppedLocalFilePath(file);
+      if (!realPath) return;
+      const item = buildLocalPathMentionItem(realPath, file.name || '', isDirectory);
+      if (!item) return;
+      const uri = item.scopeItem.scopeItem.value.absoluteUri;
+      if (seenUris.has(uri)) return;
+      seenUris.add(uri);
+      out.push(item);
+    };
+
+    if (dt.items && typeof dt.items.length === 'number') {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (!it || it.kind !== 'file') continue;
+        let isDir = false;
+        try {
+          const entry = typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null;
+          if (entry && entry.isDirectory) isDir = true;
+        } catch {}
+        const f = typeof it.getAsFile === 'function' ? it.getAsFile() : null;
+        if (f) pushEntry(f, isDir);
+      }
+    }
+    if (dt.files && typeof dt.files.length === 'number') {
+      for (let i = 0; i < dt.files.length; i++) {
+        pushEntry(dt.files[i], false);
+      }
+    }
+    if (out.length || !allowUriList) return out;
+
+    const types = Array.from(dt.types || [], (t) => String(t).toLowerCase());
+    if (types.includes('text/html')) return out;
+    let uriList = '';
+    try {
+      uriList = dt.getData('text/uri-list') || '';
+    } catch {}
+    if (uriList && uriList.trim()) {
+      for (const line of uriList.split(/\r?\n/)) {
+        const u = line.trim();
+        if (!u || u.startsWith('#') || !/^file:\/\//i.test(u)) continue;
+        const decodedPath = decodeFileUriToPath(u);
+        const baseName = decodedPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+        if (baseName && inferComposerImageMime({ name: baseName, type: '' })) continue;
+        if (seenUris.has(u)) continue;
+        seenUris.add(u);
+        out.push({
+          kind: 'file',
+          label: baseName || u,
+          desc: formatShortHomePath(decodedPath || u),
+          scopeItem: {
+            $typeName: 'exa.codeium_common_pb.ContextScopeItem',
+            scopeItem: {
+              case: 'file',
+              value: {
+                $typeName: 'exa.codeium_common_pb.FileScopeItem',
+                absoluteUri: u
+              }
+            }
+          }
+        });
       }
     }
     return out;
@@ -8821,6 +8950,7 @@ div.items-center > div[style*="--max-conversation-width"],
       mMap.set(token, {
         token,
         label: finalLabel,
+        desc: item.desc || '',
         kind: item.kind || 'conversation',
         logo: item.logo || '',
         scopeItem: item.scopeItem
@@ -10692,7 +10822,7 @@ div.items-center > div[style*="--max-conversation-width"],
                   <div id="ag-pd-media-strip" class="ag-pd-media-strip" style="display:none"></div>
                   <div id="ag-pd-mention-pills" class="ag-pd-mention-pills" style="display:none"></div>
                   <textarea id="ag-pd-composer-input" class="ag-pd-composer-input" rows="2" placeholder="${escapeHtml(
-                    L('想在这个项目里处理什么？（输入 @ 引用，支持直接粘贴图片）', 'What would you like to work on? (Type @ to mention, paste images directly)')
+                    L('想在这个项目里处理什么？（输入 @ 引用，支持拖入文件或粘贴图片）', 'What would you like to work on? (Type @ to mention, drop files or paste images)')
                   )}">${escapeHtml(savedDraft)}</textarea>
                   <div class="ag-pd-composer-foot">
                     ${
@@ -10952,44 +11082,75 @@ div.items-center > div[style*="--max-conversation-width"],
       });
       compInput.addEventListener('paste', (e) => {
         const imgs = extractComposerImageFiles(e.clipboardData);
-        if (!imgs.length) return;
+        const fileMentions = extractDroppedLocalFileMentions(e.clipboardData, { allowUriList: false });
+        if (!imgs.length && !fileMentions.length) return;
         e.preventDefault();
         e.stopPropagation();
-        stagePdComposerImageFiles(project, imgs, syncSend);
+        if (fileMentions.length) {
+          appendDroppedMentionsToPdComposer(project, compInput, fileMentions);
+        }
+        if (imgs.length) {
+          stagePdComposerImageFiles(project, imgs, syncSend);
+        }
       });
-      if (compBox) {
-        compBox.addEventListener('dragover', (e) => {
+      const compDropTarget = el.querySelector('.ag-pd-composer-wrap') || compBox;
+      if (compBox && compDropTarget) {
+        const handleComposerDragOver = (e) => {
           const dt = e.dataTransfer;
+          const types = dt ? Array.from(dt.types || [], (t) => String(t).toLowerCase()) : [];
           if (
             dt &&
-            (Array.from(dt.types || []).includes('Files') || hasDroppedContextPayload(dt))
+            (types.includes('files') ||
+              (types.includes('text/uri-list') && !types.includes('text/html')) ||
+              hasDroppedContextPayload(dt))
           ) {
             e.preventDefault();
+            e.stopPropagation();
             try {
               dt.dropEffect = 'copy';
             } catch {}
             compBox.setAttribute('data-drag', 'true');
           }
-        });
-        compBox.addEventListener('dragleave', (e) => {
-          if (!compBox.contains(e.relatedTarget)) {
+        };
+        compDropTarget.addEventListener('dragenter', handleComposerDragOver);
+        compDropTarget.addEventListener('dragover', handleComposerDragOver);
+        compDropTarget.addEventListener('dragleave', (e) => {
+          if (!compDropTarget.contains(e.relatedTarget)) {
             compBox.removeAttribute('data-drag');
           }
         });
-        compBox.addEventListener('drop', (e) => {
+        compDropTarget.addEventListener('drop', (e) => {
           compBox.removeAttribute('data-drag');
-          const droppedMentions = extractDroppedContextMentions(e.dataTransfer);
-          if (droppedMentions.length > 0) {
-            e.preventDefault();
-            e.stopPropagation();
-            appendDroppedMentionsToPdComposer(project, compInput, droppedMentions);
+          const dt = e.dataTransfer;
+          const droppedMentions = extractDroppedContextMentions(dt);
+          const localFileMentions = extractDroppedLocalFileMentions(dt);
+          const mergedMentions = droppedMentions.slice();
+          if (localFileMentions.length) {
+            const seenIds = new Set(mergedMentions.map((m) => getMentionScopeIdentity(m && m.scopeItem)).filter(Boolean));
+            for (const lm of localFileMentions) {
+              const id = getMentionScopeIdentity(lm && lm.scopeItem);
+              if (id && seenIds.has(id)) continue;
+              if (id) seenIds.add(id);
+              mergedMentions.push(lm);
+            }
+          }
+          const imgs = extractComposerImageFiles(dt);
+          const hasAnyFilePayload = Boolean(dt && dt.files && dt.files.length > 0);
+          if (!mergedMentions.length && !imgs.length) {
+            if (hasAnyFilePayload) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
             return;
           }
-          const imgs = extractComposerImageFiles(e.dataTransfer);
-          if (!imgs.length) return;
           e.preventDefault();
           e.stopPropagation();
-          stagePdComposerImageFiles(project, imgs, syncSend);
+          if (mergedMentions.length > 0) {
+            appendDroppedMentionsToPdComposer(project, compInput, mergedMentions);
+          }
+          if (imgs.length > 0) {
+            stagePdComposerImageFiles(project, imgs, syncSend);
+          }
         });
       }
       compInput.addEventListener('keydown', (e) => {

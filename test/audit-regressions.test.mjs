@@ -2000,6 +2000,70 @@ test('[v2.34 Conversation Drag, URL Auto-Link & Skill Pill] supports dragging Un
     compInput.setSelectionRange(urlPos, urlPos);
     compInput.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
     assert.deepEqual(openedUrls, ['https://antigravity.google/docs'], 'Cmd+Click on URL inside Project composer opens link');
+
+    /* 4. Drop non-image local files (e.g. .srt subtitle), folders, and mixed file+image payloads onto Project composer */
+    const pathMap = new WeakMap();
+    window.electronNative = {
+      getPathForFile: (f) => pathMap.get(f) || ''
+    };
+    const srtFile = new window.File(['1\n00:00:01,000 --> 00:00:02,000\nHello\n'], 'episode 01 字幕.srt', { type: '' });
+    pathMap.set(srtFile, '/Users/demo/project/subtitles/episode 01 字幕.srt');
+    const dirFile = new window.File([], 'captions-dir', { type: '' });
+    pathMap.set(dirFile, '/Users/demo/project/captions-dir');
+    const pngFile = new window.File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'frame.png', { type: 'image/png' });
+    pathMap.set(pngFile, '/Users/demo/project/frame.png');
+
+    compInput.value = '';
+    compInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    const dragOverEv = new window.Event('dragover', { bubbles: true, cancelable: true });
+    const dragOverDt = { types: ['Files'], dropEffect: 'none' };
+    Object.defineProperty(dragOverEv, 'dataTransfer', { value: dragOverDt });
+    compBox.dispatchEvent(dragOverEv);
+    assert.equal(dragOverEv.defaultPrevented, true, 'dragover with Files calls preventDefault');
+    assert.equal(dragOverDt.dropEffect, 'copy', 'dragover sets copy dropEffect');
+    assert.equal(compBox.getAttribute('data-drag'), 'true', 'dragover highlights Project composer');
+
+    const mixedDropEv = new window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(mixedDropEv, 'dataTransfer', {
+      value: {
+        types: ['Files'],
+        getData: () => '',
+        files: [srtFile, dirFile, pngFile],
+        items: [
+          { kind: 'file', getAsFile: () => srtFile, webkitGetAsEntry: () => ({ isDirectory: false }) },
+          { kind: 'file', getAsFile: () => dirFile, webkitGetAsEntry: () => ({ isDirectory: true }) },
+          { kind: 'file', getAsFile: () => pngFile, webkitGetAsEntry: () => ({ isDirectory: false }) }
+        ]
+      }
+    });
+    compBox.dispatchEvent(mixedDropEv);
+    await new Promise((r) => setTimeout(r, 40));
+
+    assert.equal(mixedDropEv.defaultPrevented, true, 'mixed drop prevents default navigation');
+    assert.equal(compBox.getAttribute('data-drag'), null, 'drop clears drag highlight');
+    assert.match(compInput.value, /@\[episode 01 字幕\.srt\]/, 'dropped .srt subtitle inserts file mention token');
+    assert.match(compInput.value, /@\[captions-dir\]/, 'dropped folder inserts directory mention token');
+    const pills = [...doc.querySelectorAll('#ag-pd-mention-pills .ag-pd-mention-pill')];
+    assert.equal(pills.length, 2, 'renders both file and directory mention pills');
+    assert.ok(doc.querySelector('#ag-pd-media-strip .ag-pd-media-card'), 'stages image thumbnail in the same mixed drop');
+    assert.equal(doc.querySelector('[data-ag-pd-send]').disabled, false, 'send button is enabled after file drop');
+
+    /* 5. Paste a copied local file from Finder (Cmd+C -> Cmd+V) into Project composer */
+    const vttFile = new window.File(['WEBVTT\n'], 'clip.vtt', { type: 'text/vtt' });
+    pathMap.set(vttFile, '/Users/demo/project/clip.vtt');
+    const pasteEv = new window.Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEv, 'clipboardData', {
+      value: {
+        types: ['Files'],
+        getData: () => '',
+        files: [vttFile],
+        items: [{ kind: 'file', getAsFile: () => vttFile }]
+      }
+    });
+    compInput.dispatchEvent(pasteEv);
+    assert.equal(pasteEv.defaultPrevented, true, 'pasting local file prevents default');
+    assert.match(compInput.value, /@\[clip\.vtt\]/, 'pasted .vtt file attaches as mention token');
   } finally {
     window.close();
   }
