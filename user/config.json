@@ -4,7 +4,7 @@
   "preset": "claude-desktop-purewhite",
   "contextLimit": 256000,
   "cjkFontScale": "95",
-  "chatOffsetX": -100,
+  "chatWidth": 0,
   "fonts": {
     "global": "",
     "main": "",
@@ -35,7 +35,8 @@
     "claudeUxGlass": true,
     "claudeUxGridBg": true,
     "claudeUxChatWorkSplit": true,
-    "claudeUxSidebarFooter": true
+    "claudeUxSidebarFooter": true,
+    "claudeUxChatFreeResize": true
   },
   "selectors": {
     "excludeI18n": "[data-testid=\"permissions-selector-trigger\"], [data-testid=\"model-selector-trigger\"], [data-ag-i18n-ignore=\"1\"], #ag-claude-model-popover, #ag-claude-model-subpop"

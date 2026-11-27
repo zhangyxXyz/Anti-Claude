@@ -97,6 +97,7 @@ const ALLOWED_UI_MODULE_KEYS = new Set([
   'claudeUxGridBg',
   'claudeUxChatWorkSplit',
   'claudeUxSidebarFooter',
+  'claudeUxChatFreeResize',
   'claudeUxCustomizations',
   'claudeUxCodeFold',
   'claudeUxOverviewPanel'
@@ -833,11 +834,13 @@ let activeConfig = {
 
 const ALLOWED_FONT_SLOT_KEYS = new Set(['global', 'main', 'overview', 'mono']);
 
-function sanitizeChatOffsetX(raw) {
+function sanitizeChatWidth(raw) {
   if (raw === '' || raw == null) return 0;
   const n = Number(String(raw).trim().replace(/px$/i, ''));
   if (!Number.isFinite(n)) return null;
-  return Math.max(-800, Math.min(800, Math.round(n)));
+  const rounded = Math.round(n);
+  if (rounded <= 0) return 0;
+  return Math.max(560, Math.min(1440, rounded));
 }
 
 function sanitizeFontFamilyValue(raw) {
@@ -883,8 +886,8 @@ function sanitizeUiPrefs(raw) {
   }
   const rawScale = String(raw.cjkFontScale ?? '').trim().replace(/%$/, '');
   const cjkFontScale = VALID_CJK_SCALES.has(rawScale) ? rawScale : null;
-  const chatOffsetX = Object.prototype.hasOwnProperty.call(raw, 'chatOffsetX')
-    ? sanitizeChatOffsetX(raw.chatOffsetX)
+  const chatWidth = Object.prototype.hasOwnProperty.call(raw, 'chatWidth')
+    ? sanitizeChatWidth(raw.chatWidth)
     : null;
   const fonts = sanitizeFontsMap(raw.fonts);
   const uiState = {};
@@ -897,7 +900,7 @@ function sanitizeUiPrefs(raw) {
     }
   }
   const updatedAt = Number(raw.updatedAt) > 0 ? Math.floor(Number(raw.updatedAt)) : 0;
-  return { modules, cjkFontScale, chatOffsetX, fonts, uiState, updatedAt };
+  return { modules, cjkFontScale, chatWidth, fonts, uiState, updatedAt };
 }
 
 function resolveEffectiveUserConfig(userConfigFile, rawCfg) {
@@ -945,8 +948,8 @@ function resolveEffectiveUserConfig(userConfigFile, rawCfg) {
   if (prefs.cjkFontScale && (!manualConfigNewer || !baseObj.cjkFontScale)) {
     out.cjkFontScale = prefs.cjkFontScale;
   }
-  if (prefs.chatOffsetX !== null && (!manualConfigNewer || baseObj.chatOffsetX == null)) {
-    out.chatOffsetX = prefs.chatOffsetX;
+  if (prefs.chatWidth !== null && (!manualConfigNewer || baseObj.chatWidth == null)) {
+    out.chatWidth = prefs.chatWidth;
   }
   return out;
 }
@@ -955,7 +958,7 @@ export function saveUiPrefs(payload) {
   const cur = sanitizeUiPrefs(readJsonOrFallback(UI_PREFS_FILE, null)) || {
     modules: {},
     cjkFontScale: null,
-    chatOffsetX: null,
+    chatWidth: null,
     fonts: null,
     uiState: {},
     updatedAt: 0
@@ -963,7 +966,7 @@ export function saveUiPrefs(payload) {
   const incoming = sanitizeUiPrefs(payload) || {
     modules: {},
     cjkFontScale: null,
-    chatOffsetX: null,
+    chatWidth: null,
     fonts: null,
     uiState: {},
     updatedAt: 0
@@ -971,7 +974,7 @@ export function saveUiPrefs(payload) {
   const updatedAt = Math.max(Date.now(), cur.updatedAt + 1, incoming.updatedAt);
   const mergedFonts =
     cur.fonts || incoming.fonts ? Object.assign({}, cur.fonts || {}, incoming.fonts || {}) : null;
-  const resolvedOffsetX = incoming.chatOffsetX !== null ? incoming.chatOffsetX : cur.chatOffsetX;
+  const resolvedWidth = incoming.chatWidth !== null ? incoming.chatWidth : cur.chatWidth;
   const next = {
     schema: 1,
     updatedAt,
@@ -979,7 +982,7 @@ export function saveUiPrefs(payload) {
     ...(incoming.cjkFontScale || cur.cjkFontScale
       ? { cjkFontScale: incoming.cjkFontScale || cur.cjkFontScale }
       : {}),
-    ...(resolvedOffsetX !== null ? { chatOffsetX: resolvedOffsetX } : {}),
+    ...(resolvedWidth !== null ? { chatWidth: resolvedWidth } : {}),
     ...(mergedFonts ? { fonts: mergedFonts } : {}),
     uiState: Object.assign({}, cur.uiState, incoming.uiState)
   };
@@ -990,7 +993,7 @@ export function saveUiPrefs(payload) {
     updatedAt,
     modules: next.modules,
     cjkFontScale: next.cjkFontScale || null,
-    chatOffsetX: next.chatOffsetX ?? 0,
+    chatWidth: next.chatWidth ?? 0,
     fonts: next.fonts || null,
     uiState: next.uiState
   };

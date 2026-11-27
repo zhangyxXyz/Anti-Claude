@@ -26,11 +26,16 @@
     const s = String(v == null ? '' : v).trim().replace(/%$/, '');
     return VALID_CJK_SCALES.includes(s) ? s : null;
   }
-  function normalizeChatOffsetX(v) {
+  const CHAT_WIDTH_MIN = 560;
+  const CHAT_WIDTH_MAX = 1440;
+  const CHAT_WIDTH_DEFAULT = 768;
+  function normalizeChatWidth(v) {
     if (v === '' || v == null) return 0;
     const n = Number(String(v).trim().replace(/px$/i, ''));
     if (!Number.isFinite(n)) return 0;
-    return Math.max(-800, Math.min(800, Math.round(n)));
+    const rounded = Math.round(n);
+    if (rounded <= 0) return 0;
+    return Math.max(CHAT_WIDTH_MIN, Math.min(CHAT_WIDTH_MAX, rounded));
   }
   function sanitizeFontFamilyInput(raw) {
     let s = String(raw == null ? '' : raw).replace(/[\r\n]/g, ' ').trim();
@@ -103,9 +108,9 @@
     } catch {}
     return 'work';
   })();
-  let currentChatOffsetX = Object.prototype.hasOwnProperty.call(localModOverrides, 'chatOffsetX')
-    ? normalizeChatOffsetX(localModOverrides.chatOffsetX)
-    : normalizeChatOffsetX(CFG_ROOT.chatOffsetX);
+  let currentChatWidth = Object.prototype.hasOwnProperty.call(localModOverrides, 'chatWidth')
+    ? normalizeChatWidth(localModOverrides.chatWidth)
+    : normalizeChatWidth(CFG_ROOT.chatWidth);
   let currentFonts = resolveInitialFonts(localModOverrides, CFG_ROOT);
   function applyCustomFontOverrides() {
     const rules = [];
@@ -160,22 +165,25 @@ pre, code, kbd, samp, .font-mono, #ag-live-metrics-pill, #ag-live-metrics-pill #
   font-family: ${m} !important;
 }`);
     }
-    if (currentChatOffsetX !== 0) {
-      const colW = 'max(30vw, var(--max-conversation-width, 48rem))';
-      const freeSpace = `max(0px, calc(100% - ${colW}))`;
-      const clampedLeft = `clamp(0px, calc((100% - ${colW}) / 2 + ${currentChatOffsetX}px), ${freeSpace})`;
-      rules.push(`div.items-center:has(> div[style*="--max-conversation-width"]) {
+    const activeColW = currentChatWidth > 0 ? currentChatWidth : CHAT_WIDTH_DEFAULT;
+    if (document.documentElement) {
+      document.documentElement.style.setProperty('--ag-chat-col-w', `${activeColW}px`);
+    }
+    const usableExpr = 'calc(100% - var(--ag-ov-extra-inset, 0px))';
+    const clampedColW = `min(${usableExpr}, var(--ag-chat-col-w, ${CHAT_WIDTH_DEFAULT}px))`;
+    const centeredLeft = `max(0px, calc((${usableExpr} - ${clampedColW}) / 2))`;
+    rules.push(`div.items-center:has(> div[style*="--max-conversation-width"]) {
   align-items: stretch !important;
 }
 div.mx-auto[style*="--max-conversation-width"],
 div.items-center > div[style*="--max-conversation-width"],
 .agy-home div.items-center:has(> div[style*="--max-conversation-width"]) > div {
+  --max-conversation-width: ${clampedColW} !important;
   width: 100% !important;
-  max-width: ${colW} !important;
-  margin-left: ${clampedLeft} !important;
+  max-width: ${clampedColW} !important;
+  margin-left: ${centeredLeft} !important;
   margin-right: auto !important;
 }
-/* Prevent native .md-table-bleed negative centering from overflowing left nav dots when chat is offset */
 .md-table-bleed .md-table-host[data-width-mode] {
   width: 100% !important;
   min-width: 0 !important;
@@ -184,7 +192,6 @@ div.items-center > div[style*="--max-conversation-width"],
   margin-inline-end: 0 !important;
   transform: none !important;
 }`);
-    }
     let styleEl = document.getElementById(CUSTOM_FONT_STYLE_ID);
     if (rules.length === 0) {
       if (styleEl) styleEl.remove();
@@ -224,7 +231,8 @@ div.items-center > div[style*="--max-conversation-width"],
     glass: effectiveModBool('claudeUxGlass', true),
     gridBg: effectiveModBool('claudeUxGridBg', true),
     chatWorkSplit: effectiveModBool('claudeUxChatWorkSplit', true),
-    sidebarFooter: effectiveModBool('claudeUxSidebarFooter', true)
+    sidebarFooter: effectiveModBool('claudeUxSidebarFooter', true),
+    chatFreeResize: effectiveModBool('claudeUxChatFreeResize', true)
   };
   const L = (zh, en) => (FEAT.i18n ? zh : en);
 
@@ -512,13 +520,14 @@ div.items-center > div[style*="--max-conversation-width"],
   function syncInlinePillBoundaries() {
     if (disposed) return;
     const pills = document.querySelectorAll(
-      '[data-testid="planner-response-text"] :is(:not(pre) > code, bdi.context-scope-mention), ' +
-        '[data-markdown-root] :is(:not(pre) > code, bdi.context-scope-mention), ' +
-        '.select-text :is(:not(pre) > code, bdi.context-scope-mention), ' +
-        '.prose :is(:not(pre) > code, bdi.context-scope-mention)'
+      '[data-testid="planner-response-text"] :is(:not(pre) > code, bdi.context-scope-mention):not([data-ag-pill-done]), ' +
+        '[data-markdown-root] :is(:not(pre) > code, bdi.context-scope-mention):not([data-ag-pill-done]), ' +
+        '.select-text :is(:not(pre) > code, bdi.context-scope-mention):not([data-ag-pill-done]), ' +
+        '.prose :is(:not(pre) > code, bdi.context-scope-mention):not([data-ag-pill-done])'
     );
     for (const pill of pills) {
       if (pill.closest('[contenteditable="true"], [data-lexical-editor="true"], pre, ul.contains-task-list')) {
+        pill.setAttribute('data-ag-pill-done', '1');
         continue;
       }
 
@@ -559,6 +568,9 @@ div.items-center > div[style*="--max-conversation-width"],
           if (addedLeadWj) rec.addedLeadWj = true;
           pillSiblingEdits.set(fol, rec);
           fol.nodeValue = next;
+        }
+        if ((fol.nodeValue || '').length > 0) {
+          pill.setAttribute('data-ag-pill-done', '1');
         }
       }
     }
@@ -796,7 +808,7 @@ div.items-center > div[style*="--max-conversation-width"],
   let lastSyncTs = 0;
   function syncStepStream() {
     rafPending = false;
-    if (disposed) return;
+    if (disposed || chatResizeActive) return;
     lastSyncTs = Date.now();
     if (FEAT.stepUnfold) {
       const workedBtns = document.querySelectorAll('button[data-testid="worked-for-collapsible"]');
@@ -835,6 +847,7 @@ div.items-center > div[style*="--max-conversation-width"],
     }
     syncModelTriggerDisplay();
     syncTitlebarAndBrandHeader();
+    syncChatFreeResizeRails();
     syncConversationForkUi();
     syncChatWorkSwitch();
     syncSidebarFooterCard(false);
@@ -7240,32 +7253,42 @@ div.items-center > div[style*="--max-conversation-width"],
                 </div>
                 <div class="ag-cux-settings-row">
                   <div style="min-width:0">
-                    <div class="ag-cux-settings-title">${escapeHtml(L('对话区水平偏移 (px)', 'Conversation Horizontal Offset (px)'))}</div>
+                    <div class="ag-cux-settings-title">${escapeHtml(L('对话区自由拉伸', 'Symmetrical Free Resize'))}</div>
                     <div class="ag-cux-settings-desc">${escapeHtml(
                       L(
-                        '宽屏下微调居中位置：填负数向左移（如 -160），填 0 或留空恢复原版居中，回车或失焦即时生效。',
-                        'Shift centered chat and composer horizontally on wide screens: negative moves left (e.g. -160), 0 or blank restores default.'
+                        '鼠标移到对话内容区左右边缘即可对称拖拽调整宽度（560–1440px，双击恢复 768px），消息流与底部输入框同步居中缩放。',
+                        'Hover near the left or right edge of the chat column to symmetrically drag-resize width (560–1440px, double-click resets to 768px); messages and composer stay centered and width-synced.'
                       )
                     )}</div>
                   </div>
-                  <div class="ag-cux-font-input-row" style="flex-shrink:0">
+                  <div class="ag-cux-font-input-row" style="flex-shrink:0;gap:8px">
                     <input
                       type="number"
-                      step="10"
-                      min="-800"
-                      max="800"
+                      step="16"
+                      min="${CHAT_WIDTH_MIN}"
+                      max="${CHAT_WIDTH_MAX}"
                       class="ag-cux-font-input"
-                      style="width:96px !important;flex:0 0 96px !important;text-align:right"
-                      data-ag-cux-chat-offset-x
-                      value="${currentChatOffsetX !== 0 ? String(currentChatOffsetX) : ''}"
-                      placeholder="0"
+                      style="width:84px !important;flex:0 0 84px !important;text-align:right"
+                      data-ag-cux-chat-width
+                      value="${currentChatWidth > 0 ? String(currentChatWidth) : ''}"
+                      placeholder="${CHAT_WIDTH_DEFAULT}"
+                      title="${escapeHtml(L('当前对话列宽 (px)', 'Current chat column width (px)'))}"
                     />
                     <button
                       type="button"
                       class="ag-cux-font-btn"
-                      data-ag-cux-chat-offset-reset
-                      ${currentChatOffsetX !== 0 ? '' : 'hidden'}
-                    >${escapeHtml(L('归零', 'Reset'))}</button>
+                      data-ag-cux-chat-width-reset
+                      ${currentChatWidth > 0 ? '' : 'hidden'}
+                    >${escapeHtml(L('默认', 'Reset'))}</button>
+                    <button
+                      type="button"
+                      class="ag-claude-switch"
+                      role="switch"
+                      data-ag-cux-switch="claudeUxChatFreeResize"
+                      data-ag-cux-feat="chatFreeResize"
+                      aria-label="${escapeHtml(L('对话区自由拉伸', 'Symmetrical Free Resize'))}"
+                      aria-checked="${Boolean(FEAT.chatFreeResize)}"
+                    ><span></span></button>
                   </div>
                 </div>`
                   : ''
@@ -7287,21 +7310,21 @@ div.items-center > div[style*="--max-conversation-width"],
         setCjkScaleOverride(btn.getAttribute('data-ag-cux-cjk-scale'));
       });
     });
-    const offsetInput = panel.querySelector('[data-ag-cux-chat-offset-x]');
-    if (offsetInput) {
-      const commitOffset = () => setChatOffsetXOverride(offsetInput.value);
-      offsetInput.addEventListener('change', commitOffset);
-      offsetInput.addEventListener('keydown', (e) => {
+    const widthInput = panel.querySelector('[data-ag-cux-chat-width]');
+    if (widthInput) {
+      const commitWidth = () => setChatWidthOverride(widthInput.value);
+      widthInput.addEventListener('change', commitWidth);
+      widthInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          commitOffset();
-          offsetInput.blur();
+          commitWidth();
+          widthInput.blur();
         }
       });
     }
-    const offsetResetBtn = panel.querySelector('[data-ag-cux-chat-offset-reset]');
-    if (offsetResetBtn) {
-      offsetResetBtn.addEventListener('click', () => setChatOffsetXOverride(0));
+    const widthResetBtn = panel.querySelector('[data-ag-cux-chat-width-reset]');
+    if (widthResetBtn) {
+      widthResetBtn.addEventListener('click', () => setChatWidthOverride(0));
     }
     panel.querySelectorAll('[data-ag-cux-font-input]').forEach((input) => {
       const slot = input.getAttribute('data-ag-cux-font-input');
@@ -7406,6 +7429,9 @@ div.items-center > div[style*="--max-conversation-width"],
       } else {
         teardownSidebarFooterCard();
       }
+    } else if (featKey === 'chatFreeResize') {
+      if (on) syncChatFreeResizeRails();
+      else teardownChatFreeResizeRails();
     }
     syncSidebarEnhancements();
     scheduleSync();
@@ -7438,11 +7464,12 @@ div.items-center > div[style*="--max-conversation-width"],
         modulesPayload[modKey] = Boolean(FEAT[featKey]);
       }
     }
+    modulesPayload.claudeUxChatFreeResize = Boolean(FEAT.chatFreeResize);
     const reqPayload = {
       updatedAt,
       modules: modulesPayload,
       cjkFontScale: currentCjkScale,
-      chatOffsetX: currentChatOffsetX,
+      chatWidth: currentChatWidth,
       fonts: Object.assign({}, currentFonts),
       uiState: {
         recentCollapsed: Boolean(recentCollapsed),
@@ -7478,14 +7505,14 @@ div.items-center > div[style*="--max-conversation-width"],
     flashSettingsSavedToast();
   }
 
-  function setChatOffsetXOverride(rawVal) {
-    const next = normalizeChatOffsetX(rawVal);
-    if (currentChatOffsetX === next) {
+  function setChatWidthOverride(rawVal) {
+    const next = normalizeChatWidth(rawVal);
+    if (currentChatWidth === next) {
       syncSettingsSwitchesUi();
       return;
     }
-    currentChatOffsetX = next;
-    localModOverrides.chatOffsetX = next;
+    currentChatWidth = next;
+    localModOverrides.chatWidth = next;
     persistUiPrefsToDaemon();
     applyCustomFontOverrides();
     syncSettingsSwitchesUi();
@@ -7543,13 +7570,15 @@ div.items-center > div[style*="--max-conversation-width"],
     settingsPanelEl.querySelectorAll('[data-ag-cux-cjk-scale]').forEach((btn) => {
       btn.setAttribute('aria-checked', String(btn.getAttribute('data-ag-cux-cjk-scale') === currentCjkScale));
     });
-    const offsetInput = settingsPanelEl.querySelector('[data-ag-cux-chat-offset-x]');
-    if (offsetInput) {
-      const nextStr = currentChatOffsetX !== 0 ? String(currentChatOffsetX) : '';
-      if (offsetInput.value !== nextStr) offsetInput.value = nextStr;
+    const freeResizeSw = settingsPanelEl.querySelector('[data-ag-cux-switch="claudeUxChatFreeResize"]');
+    if (freeResizeSw) freeResizeSw.setAttribute('aria-checked', String(Boolean(FEAT.chatFreeResize)));
+    const widthInput = settingsPanelEl.querySelector('[data-ag-cux-chat-width]');
+    if (widthInput) {
+      const nextStr = currentChatWidth > 0 ? String(currentChatWidth) : '';
+      if (widthInput.value !== nextStr) widthInput.value = nextStr;
     }
-    const offsetResetBtn = settingsPanelEl.querySelector('[data-ag-cux-chat-offset-reset]');
-    if (offsetResetBtn) offsetResetBtn.hidden = currentChatOffsetX === 0;
+    const widthResetBtn = settingsPanelEl.querySelector('[data-ag-cux-chat-width-reset]');
+    if (widthResetBtn) widthResetBtn.hidden = currentChatWidth <= 0;
     let anyFont = false;
     const inheritedSans = currentFonts.global || DEFAULT_SANS_FONT_STACK;
     for (const slot of FONT_SLOT_KEYS) {
@@ -12766,6 +12795,307 @@ div.items-center > div[style*="--max-conversation-width"],
   }
 
   /* ==========================================================================
+   * 14d. Symmetrical Free-Resize Drag Rails (`claudeUxChatFreeResize`)
+   * ========================================================================== */
+  let chatResizeActive = null;
+  let currentOvInsetPx = 0;
+  let currentOvExtraInsetPx = 0;
+  let ovInsetObserver = null;
+  let ovHostMutObserver = null;
+  let ovHostObservedEl = null;
+  let ovInsetObservedEl = null;
+  let mbInsetObservedEl = null;
+  let ovInsetResizeRaf = 0;
+  let ovInsetSettleTimer = 0;
+
+  function ensureOvHostObserver() {
+    if (disposed || typeof MutationObserver !== 'function') return;
+    const host = document.querySelector('[data-testid="overview-panel-host"]');
+    if (!host || host === ovHostObservedEl) return;
+    if (ovHostMutObserver) {
+      try { ovHostMutObserver.disconnect(); } catch {}
+    }
+    ovHostObservedEl = host;
+    ovHostMutObserver = new MutationObserver(() => {
+      if (disposed) return;
+      const curOv = document.querySelector('[data-testid="overview-panel"]');
+      if (curOv !== ovInsetObservedEl) {
+        updateOverviewInsetPx(true);
+        scheduleOverviewInsetCheck();
+      }
+    });
+    ovHostMutObserver.observe(host, { childList: true, subtree: true });
+  }
+
+  function scheduleOverviewInsetCheck() {
+    if (disposed) return;
+    if (!ovInsetResizeRaf) {
+      ovInsetResizeRaf = requestAnimationFrame(() => {
+        ovInsetResizeRaf = 0;
+        updateOverviewInsetPx(true);
+      });
+    }
+    if (ovInsetSettleTimer) clearTimeout(ovInsetSettleTimer);
+    ovInsetSettleTimer = setTimeout(() => {
+      ovInsetSettleTimer = 0;
+      if (!disposed) updateOverviewInsetPx(true);
+    }, 260);
+  }
+
+  function applyOvInsetWithFlip(nextRaw, nextExtra) {
+    const extraChanged = nextExtra !== currentOvExtraInsetPx;
+    const targets = [];
+    if (extraChanged && !chatResizeActive) {
+      const msgCol = document.querySelector('div.mx-auto[style*="--max-conversation-width"]');
+      const compCol = document.querySelector('div.items-center > div[style*="--max-conversation-width"]');
+      for (const el of [msgCol, compCol]) {
+        if (el && el.isConnected && typeof el.animate === 'function') {
+          const r = el.getBoundingClientRect();
+          if (r.width > 100) targets.push({ el, oldLeft: r.left, oldW: r.width });
+        }
+      }
+    }
+    if (nextRaw !== currentOvInsetPx) {
+      currentOvInsetPx = nextRaw;
+      if (docRoot) docRoot.style.setProperty('--ag-ov-inset', `${nextRaw}px`);
+    }
+    if (extraChanged) {
+      currentOvExtraInsetPx = nextExtra;
+      if (docRoot) docRoot.style.setProperty('--ag-ov-extra-inset', `${nextExtra}px`);
+    }
+    if (targets.length) {
+      for (const t of targets) {
+        const nr = t.el.getBoundingClientRect();
+        const dx = t.oldLeft - nr.left;
+        if (Math.abs(nr.width - t.oldW) <= 2 && Math.abs(dx) >= 4) {
+          try {
+            t.el.animate(
+              [{ transform: `translate3d(${dx}px, 0, 0)` }, { transform: 'translate3d(0, 0, 0)' }],
+              { duration: 190, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+            );
+          } catch {}
+        }
+      }
+    }
+  }
+
+  function updateOverviewInsetPx(force = false) {
+    const mainBody = document.querySelector('[data-main-content-body]');
+    const ovPanel = document.querySelector('[data-testid="overview-panel"]');
+    if (!force && ovPanel === ovInsetObservedEl && mainBody === mbInsetObservedEl && (ovPanel || currentOvInsetPx === 0)) {
+      return;
+    }
+    let rawInset = 0;
+    let extraInset = 0;
+    const toggleOvBtn = document.querySelector('button[data-testid="toggle-overview-panel"]');
+    const ovClosingOrClosed = toggleOvBtn && toggleOvBtn.getAttribute('aria-pressed') === 'false';
+    if (!ovClosingOrClosed && mainBody && ovPanel && ovPanel.offsetWidth > 60) {
+      const ovCs = getComputedStyle(ovPanel);
+      const isVisible =
+        ovCs.display !== 'none' &&
+        ovCs.visibility !== 'hidden' &&
+        Number(ovCs.opacity) > 0.05 &&
+        !ovPanel.closest('[aria-hidden="true"], [data-state="closed"]');
+      if (isVisible) {
+        const mbW = mainBody.clientWidth || mainBody.offsetWidth;
+        const stableOvW = Math.round(ovPanel.offsetWidth) + 13;
+        const mbR = mainBody.getBoundingClientRect();
+        const ovR = ovPanel.getBoundingClientRect();
+        const isOverlapping = ovR.left < mbR.right - 20 && ovR.right > mbR.left + 200;
+        if (isOverlapping && mbW > 480) {
+          rawInset = Math.max(0, Math.min(Math.round(mbW * 0.45), stableOvW));
+          const msgCol = mainBody.querySelector('div.mx-auto[style*="--max-conversation-width"]');
+          const msgParent = msgCol && msgCol.parentElement;
+          const nativePr = msgParent ? Math.round(parseFloat(getComputedStyle(msgParent).paddingRight) || 0) : 0;
+          extraInset = Math.max(0, rawInset - nativePr);
+        }
+      }
+    }
+    applyOvInsetWithFlip(rawInset, extraInset);
+    if (typeof ResizeObserver === 'function' && (ovPanel !== ovInsetObservedEl || mainBody !== mbInsetObservedEl)) {
+      if (ovInsetObserver) {
+        try { ovInsetObserver.disconnect(); } catch {}
+        ovInsetObserver = null;
+      }
+      ovInsetObservedEl = ovPanel || null;
+      mbInsetObservedEl = mainBody || null;
+      if (ovPanel || mainBody) {
+        ovInsetObserver = new ResizeObserver(() => scheduleOverviewInsetCheck());
+        if (ovPanel) ovInsetObserver.observe(ovPanel);
+        if (mainBody) ovInsetObserver.observe(mainBody);
+      }
+    }
+  }
+
+  const onOverviewToggleClick = (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('button[data-testid="toggle-overview-panel"]');
+    if (!btn) return;
+    if (btn.getAttribute('aria-pressed') === 'true') {
+      applyOvInsetWithFlip(0, 0);
+      scheduleOverviewInsetCheck();
+    } else {
+      scheduleOverviewInsetCheck();
+    }
+  };
+
+  window.addEventListener('resize', scheduleOverviewInsetCheck);
+  document.addEventListener('click', onOverviewToggleClick, true);
+
+  function showChatResizeBadge(widthPx) {
+    let badge = document.getElementById('ag-chat-resize-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'ag-chat-resize-badge';
+      badge.setAttribute('data-ag-i18n-ignore', '1');
+      document.body.appendChild(badge);
+    }
+    badge.textContent = `${Math.round(widthPx)} px`;
+  }
+
+  function hideChatResizeBadge() {
+    const badge = document.getElementById('ag-chat-resize-badge');
+    if (badge) badge.remove();
+  }
+
+  function bindChatResizeRail(rail, side) {
+    rail.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !FEAT.chatFreeResize) return;
+      const mainBody = rail.parentElement;
+      if (!mainBody) return;
+      e.preventDefault();
+      e.stopPropagation();
+      updateOverviewInsetPx(true);
+      const maxAvail = Math.max(
+        CHAT_WIDTH_MIN,
+        Math.min(CHAT_WIDTH_MAX, Math.floor(mainBody.clientWidth - currentOvInsetPx - 48))
+      );
+      const startW = Math.max(CHAT_WIDTH_MIN, Math.min(maxAvail, currentChatWidth > 0 ? currentChatWidth : CHAT_WIDTH_DEFAULT));
+      chatResizeActive = {
+        side,
+        startX: e.clientX,
+        startW,
+        maxAvail,
+        lastW: startW,
+        pendingW: startW,
+        rafId: 0,
+        mainBody,
+        pointerId: e.pointerId,
+        rail
+      };
+      try { rail.setPointerCapture(e.pointerId); } catch {}
+      document.body.setAttribute('data-ag-resizing-chat', '1');
+      showChatResizeBadge(startW);
+    });
+    rail.addEventListener('pointermove', (e) => {
+      if (!chatResizeActive || chatResizeActive.rail !== rail) return;
+      e.preventDefault();
+      const dx = (e.clientX - chatResizeActive.startX) * chatResizeActive.side;
+      const nextW = Math.round(
+        Math.max(CHAT_WIDTH_MIN, Math.min(chatResizeActive.maxAvail, chatResizeActive.startW + dx * 2))
+      );
+      chatResizeActive.pendingW = nextW;
+      if (!chatResizeActive.rafId) {
+        chatResizeActive.rafId = requestAnimationFrame(() => {
+          if (!chatResizeActive) return;
+          chatResizeActive.rafId = 0;
+          const w = chatResizeActive.pendingW;
+          if (w !== chatResizeActive.lastW) {
+            chatResizeActive.lastW = w;
+            chatResizeActive.mainBody.style.setProperty('--ag-chat-col-w', `${w}px`);
+            showChatResizeBadge(w);
+          }
+        });
+      }
+    });
+    const finishDrag = () => {
+      if (!chatResizeActive || chatResizeActive.rail !== rail) return;
+      if (chatResizeActive.rafId) cancelAnimationFrame(chatResizeActive.rafId);
+      const finalW = chatResizeActive.pendingW;
+      const mbRef = chatResizeActive.mainBody;
+      const pid = chatResizeActive.pointerId;
+      chatResizeActive = null;
+      try { rail.releasePointerCapture(pid); } catch {}
+      if (mbRef) mbRef.style.removeProperty('--ag-chat-col-w');
+      document.body.removeAttribute('data-ag-resizing-chat');
+      hideChatResizeBadge();
+      setChatWidthOverride(finalW === CHAT_WIDTH_DEFAULT ? 0 : finalW);
+    };
+    rail.addEventListener('pointerup', finishDrag);
+    rail.addEventListener('pointercancel', finishDrag);
+    rail.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setChatWidthOverride(0);
+      showProjectsFloatingNotice(L(`已恢复默认对话宽度 (${CHAT_WIDTH_DEFAULT}px)`, `Reset chat width to ${CHAT_WIDTH_DEFAULT}px`));
+    });
+  }
+
+  function syncChatFreeResizeRails() {
+    ensureOvHostObserver();
+    updateOverviewInsetPx();
+    if (disposed || !FEAT.chatFreeResize) {
+      teardownChatFreeResizeRails();
+      return;
+    }
+    const mainBody = document.querySelector('[data-main-content-body]');
+    if (!mainBody) return;
+    let leftRail = document.getElementById('ag-chat-resize-left');
+    if (!leftRail) {
+      leftRail = document.createElement('div');
+      leftRail.id = 'ag-chat-resize-left';
+      leftRail.className = 'ag-chat-resize-rail';
+      leftRail.setAttribute('data-side', 'left');
+      leftRail.setAttribute('data-ag-i18n-ignore', '1');
+      leftRail.setAttribute('title', L('拖动对称调整对话宽度（双击恢复默认）', 'Drag to resize chat width symmetrically (double-click to reset)'));
+      bindChatResizeRail(leftRail, -1);
+    }
+    if (leftRail.parentElement !== mainBody) mainBody.appendChild(leftRail);
+
+    let rightRail = document.getElementById('ag-chat-resize-right');
+    if (!rightRail) {
+      rightRail = document.createElement('div');
+      rightRail.id = 'ag-chat-resize-right';
+      rightRail.className = 'ag-chat-resize-rail';
+      rightRail.setAttribute('data-side', 'right');
+      rightRail.setAttribute('data-ag-i18n-ignore', '1');
+      rightRail.setAttribute('title', L('拖动对称调整对话宽度（双击恢复默认）', 'Drag to resize chat width symmetrically (double-click to reset)'));
+      bindChatResizeRail(rightRail, 1);
+    }
+    if (rightRail.parentElement !== mainBody) mainBody.appendChild(rightRail);
+  }
+
+  function teardownChatFreeResizeRails() {
+    chatResizeActive = null;
+    window.removeEventListener('resize', scheduleOverviewInsetCheck);
+    document.removeEventListener('click', onOverviewToggleClick, true);
+    if (ovInsetResizeRaf) {
+      cancelAnimationFrame(ovInsetResizeRaf);
+      ovInsetResizeRaf = 0;
+    }
+    if (ovInsetSettleTimer) {
+      clearTimeout(ovInsetSettleTimer);
+      ovInsetSettleTimer = 0;
+    }
+    if (ovInsetObserver) {
+      try { ovInsetObserver.disconnect(); } catch {}
+      ovInsetObserver = null;
+    }
+    if (ovHostMutObserver) {
+      try { ovHostMutObserver.disconnect(); } catch {}
+      ovHostMutObserver = null;
+    }
+    ovHostObservedEl = null;
+    ovInsetObservedEl = null;
+    mbInsetObservedEl = null;
+    if (document.body) document.body.removeAttribute('data-ag-resizing-chat');
+    hideChatResizeBadge();
+    const l = document.getElementById('ag-chat-resize-left');
+    if (l) l.remove();
+    const r = document.getElementById('ag-chat-resize-right');
+    if (r) r.remove();
+  }
+
+  /* ==========================================================================
    * 15. Bottom-Left Fixed Sidebar Profile + Dual 5h Quota Bar & Popover (`claudeUxSidebarFooter`)
    * ========================================================================== */
   let sbQuotaPopoverOpen = false;
@@ -15188,7 +15518,7 @@ div.items-center > div[style*="--max-conversation-width"],
   }
 
   const OWN_SEL =
-    '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, .ag-claude-inline-editor, .ag-claude-folder-badges, #ag-claude-recent-section, #ag-recent-row-menu, #ag-project-action-menu, #ag-claude-ux-settings-nav, #ag-claude-ux-settings-panel, #ag-settings-stats-wrap, .ag-settings-subhdr-chev, #ag-claude-projects-nav-btn, #ag-claude-projects-view, #ag-claude-project-modal, .ag-code-fold-toggle, .ag-code-fold-bar, #ag-claude-ov-sections, #ag-cw-switch, #ag-sb-footer-card, #ag-sb-quota-popover, #ag-tb-nav-group, .ag-sb-brand-name, .ag-fork-turn-btn, #ag-fork-turn-popover, .ag-fork-menu-item, .ag-fork-submenu';
+    '.ag-collapse-ghost, .ag-orbit-dots, .ag-elapsed-timer, #ag-claude-ctx-ring, #ag-claude-quota-popover, #ag-claude-model-popover, #ag-claude-model-subpop, #ag-claude-model-tripop, .ag-claude-inline-editor, .ag-claude-folder-badges, #ag-claude-recent-section, #ag-recent-row-menu, #ag-project-action-menu, #ag-claude-ux-settings-nav, #ag-claude-ux-settings-panel, #ag-settings-stats-wrap, .ag-settings-subhdr-chev, #ag-claude-projects-nav-btn, #ag-claude-projects-view, #ag-claude-project-modal, .ag-code-fold-toggle, .ag-code-fold-bar, #ag-claude-ov-sections, #ag-cw-switch, #ag-sb-footer-card, #ag-sb-quota-popover, #ag-tb-nav-group, .ag-sb-brand-name, .ag-fork-turn-btn, #ag-fork-turn-popover, .ag-fork-menu-item, .ag-fork-submenu, #ag-chat-resize-left, #ag-chat-resize-right, #ag-chat-resize-badge';
   const CLASS_WATCH_SEL =
     '[id="antigravity.agentSidePanelInputBox"], [data-testid="tool-group-collapsible"], [data-testid="worked-for-collapsible"], [data-testid="progress-updates-collapsible"], [data-testid="ephemeral-tool-status"]';
 
@@ -15442,6 +15772,7 @@ div.items-center > div[style*="--max-conversation-width"],
       docRoot.removeAttribute('data-ag-cw-mode');
       docRoot.removeAttribute('data-ag-sb-footer');
     }
+    teardownChatFreeResizeRails();
     teardownConversationForkUi();
     teardownTitlebarAndBrandHeader();
     teardownChatWorkSwitch();
