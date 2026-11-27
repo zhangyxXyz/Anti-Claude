@@ -697,6 +697,27 @@ body[data-agy-theme][data-newux-theme="onyx"] .surface-composer:focus-within > .
 }
 
 /* 3.1b Restore solid opaque card & text hierarchy for / and @ typeahead menus portaled into composer */
+[data-mention-menu] {
+  padding: 5px !important;
+  border-radius: 12px !important;
+  max-height: 360px !important;
+}
+
+[data-mention-menu] > div {
+  max-height: 348px !important;
+}
+
+[data-mention-menu] [role="option"] {
+  min-height: 28px !important;
+  padding: 4px 10px !important;
+  gap: 8px !important;
+  border-radius: 7px !important;
+}
+
+[data-mention-menu] :is(li, [aria-selected], .cursor-pointer, button) {
+  border-radius: 7px !important;
+}
+
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) #antigravity\.agentSidePanelInputBox > [data-mention-menu],
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-mention-menu] {
   background-color: #FFFFFF !important;
@@ -716,20 +737,30 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-mention-menu] {
 /* 4x ID specificity outranks upstream core/theme.css rule using :not(#ag-live-metrics-pill) (3-ID specificity) */
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) #antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox [data-mention-menu] [data-testid="menu-option-label"] {
   color: #191918 !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
+  line-height: 1.35 !important;
 }
 
 :is(html[data-ag-theme-mode="dark"] body, body.dark) #antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox [data-mention-menu] [data-testid="menu-option-label"] {
   color: #ECECEA !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
+  line-height: 1.35 !important;
 }
 
 html:not([data-ag-theme-mode="dark"]) body:not(.dark) #antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox [data-mention-menu] :is([data-testid="menu-option-description"], [data-testid="menu-option-trailing-label"], [data-testid="mention-menu-searching-row"], [data-testid="mention-menu-searching-row"] span, [data-testid="mention-menu-footer"], [data-testid="mention-menu-footer"] span, .text-secondary-foreground, .text-secondary-foreground svg) {
   color: #787774 !important;
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
 }
 
 :is(html[data-ag-theme-mode="dark"] body, body.dark) #antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox#antigravity\.agentSidePanelInputBox [data-mention-menu] :is([data-testid="menu-option-description"], [data-testid="menu-option-trailing-label"], [data-testid="mention-menu-searching-row"], [data-testid="mention-menu-searching-row"] span, [data-testid="mention-menu-footer"], [data-testid="mention-menu-footer"] span, .text-secondary-foreground, .text-secondary-foreground svg) {
   color: #9A9994 !important;
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
 }
 
 /* 3.2 Composer footer controls & 100% unified sans-serif metrics pill (12.5px, warm gray) */
@@ -8931,6 +8962,45 @@ html:not([data-ag-theme-mode="dark"]) body:not(.dark) [data-ag-question-card="1"
 
 :is(html[data-ag-theme-mode="dark"] body, body.dark) [data-testid="ask-question-entry-readonly"] > :nth-child(2).text-muted-foreground::before {
   color: rgba(236, 236, 234, 0.42);
+}
+
+/* ============================================================================
+ * 20. Search / Command Palette Modal: Frosted Scrim + Crisp Typography
+ * ============================================================================ */
+div.inset-0.z-\[4800\]:has(> [role="dialog"]) {
+  top: 30px !important;
+  backdrop-filter: blur(5px) saturate(115%) !important;
+  -webkit-backdrop-filter: blur(5px) saturate(115%) !important;
+  transition: background-color 140ms ease, backdrop-filter 140ms ease !important;
+}
+
+html:not([data-ag-theme-mode="dark"]) body:not(.dark) div.inset-0.z-\[4800\]:has(> [role="dialog"]) {
+  background-color: rgba(15, 15, 14, 0.10) !important;
+}
+
+:is(html[data-ag-theme-mode="dark"] body, body.dark) div.inset-0.z-\[4800\]:has(> [role="dialog"]) {
+  background-color: rgba(0, 0, 0, 0.24) !important;
+}
+
+div.inset-0.z-\[4800\] > [role="dialog"] input {
+  font-size: 14.5px !important;
+  font-weight: 450 !important;
+}
+
+div.inset-0.z-\[4800\] > [role="dialog"] .group.cursor-pointer.rounded-lg {
+  min-height: 36px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  font-size: 14px !important;
+  font-weight: 450 !important;
+}
+
+div.inset-0.z-\[4800\] > [role="dialog"] .group.cursor-pointer.rounded-lg :is(span, div) {
+  font-weight: 450 !important;
+}
+
+div.inset-0.z-\[4800\] > [role="dialog"] .group.cursor-pointer.rounded-lg :is(.text-muted-foreground, .text-secondary-foreground, .opacity-50, .opacity-60, .opacity-70) {
+  font-weight: 400 !important;
 }
 
 body[data-has-browser-hole="true"] .ag-chat-resize-rail {
