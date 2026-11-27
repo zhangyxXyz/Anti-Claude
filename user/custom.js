@@ -847,6 +847,7 @@ div.items-center > div[style*="--max-conversation-width"],
     syncTitlebarAndBrandHeader();
     syncChatFreeResizeRails();
     syncStreamingBottomLock();
+    syncQuestionCards();
     syncConversationForkUi();
     syncChatWorkSwitch();
     syncSidebarFooterCard(false);
@@ -12868,6 +12869,30 @@ div.items-center > div[style*="--max-conversation-width"],
   document.addEventListener('wheel', onStreamScrollWheel, { passive: true, capture: true });
   document.addEventListener('keydown', onStreamScrollKey, true);
   document.addEventListener('click', onStreamScrollClick, true);
+
+  function syncQuestionCards() {
+    if (disposed) return;
+    const entries = document.querySelectorAll('[data-testid="ask-question-entry-readonly"]:not([data-ag-q-done="1"])');
+    if (!entries.length) return;
+    entries.forEach((entry) => {
+      entry.setAttribute('data-ag-q-done', '1');
+      const card = entry.closest('div.rounded-xl.border');
+      if (!card) return;
+      if (card.getAttribute('data-ag-question-card') !== '1') {
+        card.setAttribute('data-ag-question-card', '1');
+      }
+      if (FEAT.i18n) {
+        const hdrSpan = card.querySelector(':scope > div.border-b > span');
+        if (hdrSpan && hdrSpan.getAttribute('data-ag-i18n-ignore') !== '1') {
+          const m = (hdrSpan.textContent || '').trim().match(/^(\d+)\s+questions?$/i);
+          if (m) {
+            hdrSpan.textContent = `${m[1]} 个问题`;
+            hdrSpan.setAttribute('data-ag-i18n-ignore', '1');
+          }
+        }
+      }
+    });
+  }
 
   function syncStreamingBottomLock() {
     if (disposed || chatResizeActive) return;
